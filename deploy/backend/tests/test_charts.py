@@ -7,9 +7,10 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture()
-def charts_client(test_db):
-    os.environ["DATA_DIR"] = os.path.dirname(test_db)
+def charts_client(test_db, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", os.path.dirname(test_db))
     import deploy.backend.api.charts as charts_mod
+    import importlib
     importlib.reload(charts_mod)
     app = FastAPI()
     app.include_router(charts_mod.router)
@@ -53,6 +54,8 @@ def test_by_verse(charts_client):
 def test_scatter(charts_client):
     r = charts_client.get("/api/charts/scatter")
     assert r.status_code == 200
-    points = r.json()
-    assert len(points) > 0
-    assert all("year" in p and "speaker" in p and "count" in p for p in points)
+    points = {(p["year"], p["speaker"]): p["count"] for p in r.json()}
+    assert points[(2022, "Pastor A")] == 2
+    assert points[(2023, "Pastor B")] == 2
+    assert points[(2024, "Pastor A")] == 1
+    assert points[(2024, "Pastor C")] == 1

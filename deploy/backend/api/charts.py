@@ -1,21 +1,29 @@
 # deploy/backend/api/charts.py
 import sqlite3
 import os
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from deploy.backend.api.models import StatsResponse, YearCount, SpeakerCount, VerseCount, ScatterPoint
 
 router = APIRouter()
 
 
 def _db_path() -> str:
-    return os.path.join(os.getenv("DATA_DIR", "data"), "sermons.db")
+    data_dir = os.environ.get("DATA_DIR")
+    if not data_dir:
+        raise RuntimeError("DATA_DIR environment variable is not set")
+    return os.path.join(data_dir, "sermons.db")
 
 
 def _query(sql: str, params: tuple = ()) -> list[tuple]:
-    with sqlite3.connect(_db_path()) as conn:
-        return conn.execute(sql, params).fetchall()
+    """Execute a read-only SQL statement. params reserved for future filtered endpoints."""
+    try:
+        with sqlite3.connect(_db_path()) as conn:
+            return conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as exc:
+        raise HTTPException(status_code=503, detail="Database not ready") from exc
 
 
-@router.get("/api/stats")
+@router.get("/api/stats", response_model=StatsResponse)
 def get_stats():
     total = _query("SELECT COUNT(*) FROM sermons")[0][0]
     speakers = _query(
@@ -30,7 +38,7 @@ def get_stats():
     }
 
 
-@router.get("/api/charts/by-year")
+@router.get("/api/charts/by-year", response_model=list[YearCount])
 def by_year():
     rows = _query(
         "SELECT year, COUNT(*) FROM sermons WHERE year IS NOT NULL GROUP BY year ORDER BY year"
@@ -38,7 +46,7 @@ def by_year():
     return [{"year": r[0], "count": r[1]} for r in rows]
 
 
-@router.get("/api/charts/by-speaker")
+@router.get("/api/charts/by-speaker", response_model=list[SpeakerCount])
 def by_speaker():
     rows = _query(
         "SELECT speaker, COUNT(*) FROM sermons "
@@ -48,7 +56,7 @@ def by_speaker():
     return [{"speaker": r[0], "count": r[1]} for r in rows]
 
 
-@router.get("/api/charts/by-verse")
+@router.get("/api/charts/by-verse", response_model=list[VerseCount])
 def by_verse():
     rows = _query(
         "SELECT bible_book, COUNT(*) FROM sermons "
@@ -58,7 +66,7 @@ def by_verse():
     return [{"bible_book": r[0], "count": r[1]} for r in rows]
 
 
-@router.get("/api/charts/scatter")
+@router.get("/api/charts/scatter", response_model=list[ScatterPoint])
 def scatter():
     rows = _query(
         "SELECT year, speaker, COUNT(*) FROM sermons "
