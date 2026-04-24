@@ -23,8 +23,8 @@ class ChatResponse(BaseModel):
 class StatsResponse(BaseModel):
     total_sermons: int
     total_speakers: int
-    year_min: Optional[int]
-    year_max: Optional[int]
+    year_min: Optional[int] = None
+    year_max: Optional[int] = None
 
 
 class YearCount(BaseModel):
