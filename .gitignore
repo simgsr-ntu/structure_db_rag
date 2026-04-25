@@ -1,0 +1,11 @@
+.worktrees/
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+.tmp_dagster_home_*/
+*.png
+app_log.txt
+pipeline_error*.txt
+resources.html
