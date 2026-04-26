@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
 from src.llm import get_llm
+from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats_bar
 
 load_dotenv()
 
@@ -57,6 +58,13 @@ try:
 except Exception as e:
     print(f"⚠️ Initialization warning: {e}")
     agent = None
+    registry = None
+
+_stats_bar_html = (
+    render_stats_bar(fetch_archive_stats(registry.db_path))
+    if registry is not None
+    else render_stats_bar(None)
+)
 
 def respond(message, history, provider):
     # Dynamic LLM selection
@@ -80,7 +88,13 @@ def respond(message, history, provider):
         if turn["role"] == "user":
             messages.append(HumanMessage(content=turn["content"]))
         else:
-            messages.append(AIMessage(content=turn["content"]))
+            content = turn["content"]
+            if isinstance(content, list):
+                content = " ".join(
+                    block.get("text", "") for block in content
+                    if block.get("type") == "text"
+                )
+            messages.append(AIMessage(content=content))
     
     messages.append(HumanMessage(content=message))
     
@@ -185,6 +199,42 @@ footer {visibility: hidden}
 }
 .status-online { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
 .status-offline { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+.stats-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    color: #94a3b8;
+    font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+    .gradio-container {
+        max-width: 100% !important;
+    }
+    .sidebar {
+        border-right: none !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+    .stats-bar {
+        flex-direction: column;
+        gap: 6px;
+        align-items: flex-start;
+    }
+    #title-text h1 {
+        font-size: 1.8rem;
+    }
+    .message-user, .message-assistant {
+        font-size: 0.9rem;
+        padding: 10px 12px !important;
+    }
+}
 """
 
 with gr.Blocks() as demo:
@@ -199,12 +249,15 @@ with gr.Blocks() as demo:
                     </div>
                 </div>
             """)
-    
+
+    gr.HTML(_stats_bar_html)
+
     with gr.Row():
         # Main Chat Area
         with gr.Column(scale=3):
             chatbot = gr.Chatbot(
-                height=600,
+                type="messages",
+                min_height=400,
                 show_label=False,
                 elem_classes="chatbot-container",
                 avatar_images=(None, "https://www.bbtc.com.sg/wp-content/uploads/2021/04/BBTC-Logo-Header.png")
@@ -220,11 +273,16 @@ with gr.Blocks() as demo:
             with gr.Row():
                 gr.Examples(
                     examples=[
-                        ["List the top 3 verses preached each year."],
-                        ["Which bible verses were preached most often in 2024?"],
-                        ["Summarize the 'Bigger Fire' sermon and its key takeaways."],
-                        ["Create a bar chart of how many sermons each speaker gave."],
-                        ["Who spoke on the most recent Sunday in the database?"]
+                        ["How many sermons are in the archive and who are the top 5 speakers?"],
+                        ["Show a bar chart of how many sermons were preached each year"],
+                        ["Show a bar chart of the top 10 most-preached Bible books"],
+                        ["Create a bar chart of sermon count per speaker"],
+                        ["What sermons have been preached on the book of Romans?"],
+                        ["Find sermons about forgiveness, grace, and redemption"],
+                        ["What have our pastors said about faith during trials and suffering?"],
+                        ["Find sermons that cover John 3:16 or the topic of eternal life"],
+                        ["Compare what different speakers have said about the Holy Spirit"],
+                        ["What was the most recent sermon and what were its key points?"],
                     ],
                     inputs=msg,
                     label="⚡ Quick Inquiries"
@@ -281,23 +339,49 @@ with gr.Blocks() as demo:
     def bot_msg(history: list, provider):
         if not history or history[-1]["role"] != "user":
             return history
-        
+
         user_message = history[-1]["content"]
         if isinstance(user_message, list):
-            user_message = " ".join([m["text"] for m in user_message if isinstance(m, dict) and m.get("type") == "text"])
-        
+            user_message = " ".join(
+                [m["text"] for m in user_message if isinstance(m, dict) and m.get("type") == "text"]
+            )
+
         chat_history = history[:-1]
         bot_message = respond(user_message, chat_history, provider)
-        history.append({"role": "assistant", "content": bot_message})
+
+        if not isinstance(bot_message, str):
+            bot_message = str(bot_message)
+
+        text, chart_path = extract_chart_path(bot_message)
+        if chart_path:
+            content = [
+                {"type": "text", "text": text},
+                {"path": chart_path},
+            ]
+        else:
+            content = bot_message
+
+        history.append({"role": "assistant", "content": content})
         return history
 
+    disable_submit = lambda: gr.update(value="⏳ Thinking...", interactive=False)
+    enable_submit = lambda: gr.update(value="🚀 Send", interactive=True)
+
     msg.submit(user_msg, [msg, chatbot], [msg, chatbot], queue=True).then(
+        disable_submit, None, submit
+    ).then(
         bot_msg, [chatbot, provider_radio], chatbot
+    ).then(
+        enable_submit, None, submit
     )
     submit.click(user_msg, [msg, chatbot], [msg, chatbot], queue=True).then(
+        disable_submit, None, submit
+    ).then(
         bot_msg, [chatbot, provider_radio], chatbot
+    ).then(
+        enable_submit, None, submit
     )
     clear.click(lambda: [], None, chatbot, queue=False)
 
 if __name__ == "__main__":
-    demo.launch(css=custom_css, theme=gr.themes.Default())
+    demo.launch(css=custom_css, theme=gr.themes.Default(), allowed_paths=["/tmp"])
