@@ -85,6 +85,17 @@ class SermonVectorStore:
     def search_bible(self, query: str, k: int = 4, where: dict | None = None) -> list[dict]:
         return self._search(self._bible, query, k, where)
 
+    def get_bible_versions(self, ref_id: str) -> list[dict]:
+        """Returns all versions of a specific verse reference."""
+        results = self._bible.get(
+            where={"ref_id": ref_id},
+            include=["documents", "metadatas"]
+        )
+        return [
+            {"content": doc, "metadata": meta}
+            for doc, meta in zip(results["documents"], results["metadatas"])
+        ]
+
     def counts(self) -> dict:
         return {
             "sermon_collection": self._sermons.count(),

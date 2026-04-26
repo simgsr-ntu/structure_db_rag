@@ -13,6 +13,7 @@ if os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
 from src.storage.sqlite_store import SermonRegistry
 from src.tools.sql_tool import make_sql_tool
 from src.tools.vector_tool import make_vector_tool
+from src.tools.bible_tool import make_bible_tool
 from src.tools.matplotlib_tool import make_matplotlib_tool
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, AIMessage
@@ -26,6 +27,7 @@ try:
     # Tools
     sql_tool = make_sql_tool(registry)
     vector_tool = make_vector_tool(vector_store)
+    bible_tool = make_bible_tool(vector_store)
     viz_tool = make_matplotlib_tool(registry)
     
     SYSTEM_PROMPT = (
@@ -38,6 +40,7 @@ try:
         "when the user specifies them.\n"
         "- For 'what was said about X in year Y' or 'what did speaker Z say about X', use search_sermons_tool "
         "with the year/speaker filter directly — do not run sql_query_tool first.\n"
+        "- Use 'compare_bible_versions' only when the user explicitly asks to compare Bible translations.\n"
         "- Use 'matplotlib_tool' only when the user asks for a chart or visualization. "
         "Valid chart_name values: 'sermons_per_speaker', 'sermons_per_year', 'top_bible_books'.\n\n"
         "## Grounding rules\n"
@@ -49,7 +52,7 @@ try:
         "a refined query before responding.\n"
     )
     
-    agent = create_react_agent(llm, tools=[sql_tool, vector_tool, viz_tool], prompt=SYSTEM_PROMPT)
+    agent = create_react_agent(llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], prompt=SYSTEM_PROMPT)
 
 except Exception as e:
     print(f"⚠️ Initialization warning: {e}")
@@ -66,7 +69,7 @@ def respond(message, history, provider):
             current_llm = get_llm(provider_type="ollama", temperature=0.1)
         
         # Re-initialize agent with the chosen LLM
-        current_agent = create_react_agent(current_llm, tools=[sql_tool, vector_tool, viz_tool], prompt=SYSTEM_PROMPT)
+        current_agent = create_react_agent(current_llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], prompt=SYSTEM_PROMPT)
     except Exception as e:
         return f"⚠️ Initialization error: {e}"
 
