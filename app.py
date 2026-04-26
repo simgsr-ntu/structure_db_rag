@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
 from src.llm import get_llm
-from src.ui_helpers import extract_chart_path
+from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats_bar
 
 load_dotenv()
 
@@ -58,6 +58,11 @@ try:
 except Exception as e:
     print(f"⚠️ Initialization warning: {e}")
     agent = None
+
+try:
+    _stats_bar_html = render_stats_bar(fetch_archive_stats(registry.db_path))
+except Exception:
+    _stats_bar_html = render_stats_bar(None)
 
 def respond(message, history, provider):
     # Dynamic LLM selection
@@ -192,6 +197,20 @@ footer {visibility: hidden}
 }
 .status-online { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
 .status-offline { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+.stats-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    color: #94a3b8;
+    font-size: 0.875rem;
+}
 """
 
 with gr.Blocks() as demo:
@@ -206,7 +225,9 @@ with gr.Blocks() as demo:
                     </div>
                 </div>
             """)
-    
+
+    gr.HTML(_stats_bar_html)
+
     with gr.Row():
         # Main Chat Area
         with gr.Column(scale=3):
