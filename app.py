@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
 from src.llm import get_llm
+from src.ui_helpers import extract_chart_path
 
 load_dotenv()
 
@@ -204,7 +205,8 @@ with gr.Blocks() as demo:
         # Main Chat Area
         with gr.Column(scale=3):
             chatbot = gr.Chatbot(
-                height=600,
+                type="messages",
+                min_height=400,
                 show_label=False,
                 elem_classes="chatbot-container",
                 avatar_images=(None, "https://www.bbtc.com.sg/wp-content/uploads/2021/04/BBTC-Logo-Header.png")
@@ -281,14 +283,26 @@ with gr.Blocks() as demo:
     def bot_msg(history: list, provider):
         if not history or history[-1]["role"] != "user":
             return history
-        
+
         user_message = history[-1]["content"]
         if isinstance(user_message, list):
-            user_message = " ".join([m["text"] for m in user_message if isinstance(m, dict) and m.get("type") == "text"])
-        
+            user_message = " ".join(
+                [m["text"] for m in user_message if isinstance(m, dict) and m.get("type") == "text"]
+            )
+
         chat_history = history[:-1]
         bot_message = respond(user_message, chat_history, provider)
-        history.append({"role": "assistant", "content": bot_message})
+
+        text, chart_path = extract_chart_path(bot_message)
+        if chart_path:
+            content = [
+                {"type": "text", "text": text},
+                {"type": "image", "url": chart_path},
+            ]
+        else:
+            content = bot_message
+
+        history.append({"role": "assistant", "content": content})
         return history
 
     msg.submit(user_msg, [msg, chatbot], [msg, chatbot], queue=True).then(
@@ -300,4 +314,4 @@ with gr.Blocks() as demo:
     clear.click(lambda: [], None, chatbot, queue=False)
 
 if __name__ == "__main__":
-    demo.launch(css=custom_css, theme=gr.themes.Default())
+    demo.launch(css=custom_css, theme=gr.themes.Default(), allowed_paths=["/tmp"])
