@@ -79,6 +79,12 @@ class TestFetchArchiveStats:
     def test_speaker_count_excludes_null(self, db_path):
         assert fetch_archive_stats(db_path)["speakers"] == 2
 
+    def test_speaker_count_excludes_empty_string(self, db_path):
+        # Add a row with empty-string speaker
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("INSERT INTO sermons VALUES (?, ?, ?, ?)", ("s5", "", 2023, "English"))
+        assert fetch_archive_stats(db_path)["speakers"] == 2  # still 2, not 3
+
     def test_year_range(self, db_path):
         stats = fetch_archive_stats(db_path)
         assert stats["year_min"] == 2022
@@ -119,3 +125,12 @@ class TestRenderStatsBar:
         html = render_stats_bar(stats)
         assert "N/A" in html
         assert "10 sermons" in html
+
+    def test_renders_na_when_only_year_max_is_none(self):
+        stats = {
+            "sermons": 10, "speakers": 3,
+            "year_min": 2020, "year_max": None, "languages": 1,
+        }
+        html = render_stats_bar(stats)
+        assert "N/A" in html
+        assert "None" not in html

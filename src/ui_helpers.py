@@ -25,7 +25,8 @@ def fetch_archive_stats(db_path: str) -> dict | None:
         with sqlite3.connect(db_path) as conn:
             sermon_count = conn.execute("SELECT COUNT(*) FROM sermons").fetchone()[0]
             speaker_count = conn.execute(
-                "SELECT COUNT(DISTINCT speaker) FROM sermons WHERE speaker IS NOT NULL"
+                "SELECT COUNT(DISTINCT speaker) FROM sermons "
+                "WHERE speaker IS NOT NULL AND speaker != ''"
             ).fetchone()[0]
             year_row = conn.execute(
                 "SELECT MIN(year), MAX(year) FROM sermons WHERE year IS NOT NULL"
@@ -51,7 +52,7 @@ def render_stats_bar(stats: dict | None) -> str:
         return "<div class='stats-bar'>📚 Archive stats unavailable</div>"
     year_range = (
         f"{stats['year_min']} – {stats['year_max']}"
-        if stats["year_min"] is not None
+        if stats["year_min"] is not None and stats["year_max"] is not None
         else "N/A"
     )
     return (
