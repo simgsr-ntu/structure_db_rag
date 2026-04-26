@@ -356,7 +356,7 @@ with gr.Blocks() as demo:
         if chart_path:
             content = [
                 {"type": "text", "text": text},
-                {"type": "image", "url": chart_path},
+                {"path": chart_path},
             ]
         else:
             content = bot_message
