@@ -16,7 +16,7 @@ from src.tools.sql_tool import make_sql_tool
 from src.tools.vector_tool import make_vector_tool
 from src.tools.bible_tool import make_bible_tool
 from src.tools.matplotlib_tool import make_matplotlib_tool
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, AIMessage
 
 # Initialize
@@ -53,7 +53,7 @@ try:
         "a refined query before responding.\n"
     )
     
-    agent = create_react_agent(llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], prompt=SYSTEM_PROMPT)
+    agent = create_agent(llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], system_prompt=SYSTEM_PROMPT)
 
 except Exception as e:
     print(f"⚠️ Initialization warning: {e}")
@@ -77,7 +77,7 @@ def respond(message, history, provider):
             current_llm = get_llm(provider_type="ollama", temperature=0.1)
         
         # Re-initialize agent with the chosen LLM
-        current_agent = create_react_agent(current_llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], prompt=SYSTEM_PROMPT)
+        current_agent = create_agent(current_llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], system_prompt=SYSTEM_PROMPT)
     except Exception as e:
         return f"⚠️ Initialization error: {e}"
 
@@ -256,7 +256,6 @@ with gr.Blocks() as demo:
         # Main Chat Area
         with gr.Column(scale=3):
             chatbot = gr.Chatbot(
-                type="messages",
                 min_height=400,
                 show_label=False,
                 elem_classes="chatbot-container",
