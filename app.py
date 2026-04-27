@@ -1,5 +1,8 @@
 import gradio as gr
 import os
+import subprocess
+import time
+import urllib.request
 from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
 from src.llm import get_llm
@@ -13,6 +16,34 @@ from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, AIMessage
 
 load_dotenv()
+
+
+def _ensure_ollama(timeout: int = 20) -> bool:
+    def _is_up() -> bool:
+        try:
+            urllib.request.urlopen("http://127.0.0.1:11434", timeout=2)
+            return True
+        except Exception:
+            return False
+
+    if _is_up():
+        return True
+
+    print("🦙 Ollama not running — starting it now...")
+    subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(1)
+        if _is_up():
+            print("🦙 Ollama is ready.")
+            return True
+
+    print("⚠️  Ollama did not start within the timeout.")
+    return False
+
+
+_ensure_ollama()
 
 try:
     registry = SermonRegistry()
@@ -36,7 +67,8 @@ try:
         "with the year/speaker filter directly — do not run sql_query_tool first.\n"
         "- Use 'compare_bible_versions' only when the user explicitly asks to compare Bible translations.\n"
         "- Use 'matplotlib_tool' only when the user asks for a chart or visualization. "
-        "Valid chart_name values: 'sermons_per_speaker', 'sermons_per_year', 'top_bible_books', 'sermons_scatter'.\n\n"
+        "Valid chart_name values: 'sermons_per_speaker', 'sermons_per_year', 'top_bible_books', 'sermons_scatter'. "
+        "When matplotlib_tool returns a file path, copy that exact path into your response verbatim — do not describe or summarise the chart data.\n\n"
         "## Grounding rules\n"
         "- Answer ONLY from data returned by the tools. Never invent sermon content, speaker names, "
         "dates, or verses.\n"
@@ -83,7 +115,21 @@ def respond(message, history):
 
     try:
         result = agent.invoke({"messages": messages})
-        return result["messages"][-1].content
+        final = result["messages"][-1].content
+        if not isinstance(final, str):
+            final = str(final)
+
+        # If the LLM dropped the chart path from its response, recover it from
+        # the ToolMessage so extract_chart_path can still render the image.
+        if "/tmp/bbtc_chart_" not in final:
+            import re
+            for msg in result["messages"]:
+                match = re.search(r'/tmp/bbtc_chart_[a-f0-9]+\.png', str(msg.content))
+                if match:
+                    final = final.rstrip() + "\n" + match.group(0)
+                    break
+
+        return final
     except Exception as e:
         return f"⚠️ An error occurred while processing your request: {e}"
 
@@ -254,6 +300,7 @@ with gr.Blocks() as demo:
             gr.Markdown("### ⚙️ System Status")
 
             vec_status = "online" if vector_store else "offline"
+            ollama_status = "online" if (vector_store and vector_store._embeddings is not None) else "offline"
             gr.HTML(f"""
                 <div style='display: flex; flex-direction: column; gap: 10px;'>
                     <div style='display: flex; justify-content: space-between;'>
@@ -266,7 +313,7 @@ with gr.Blocks() as demo:
                     </div>
                     <div style='display: flex; justify-content: space-between;'>
                         <span>LLM Engine</span>
-                        <span class='status-badge status-online'>OLLAMA</span>
+                        <span class='status-badge status-{ollama_status}'>OLLAMA</span>
                     </div>
                 </div>
             """)

@@ -1,8 +1,5 @@
 # src/agents/sermon_structure_agent.py
-import os
 import re
-from dotenv import load_dotenv
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
 from src.storage.sqlite_store import SermonRegistry
@@ -10,17 +7,11 @@ from src.storage.chroma_store import SermonVectorStore
 from src.tools.sql_tool import make_sql_tool
 from src.tools.matplotlib_tool import make_matplotlib_tool
 from src.graph.state import AgentState
-
-load_dotenv()
+from src.llm import get_llm
 
 _registry = SermonRegistry()
 _store = SermonVectorStore()
-# Try to get LLM from env or fallback
-if os.getenv("GROQ_API_KEY"):
-    _llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1)
-else:
-    from src.llm import get_llm
-    _llm = get_llm(temperature=0.1)
+_llm = get_llm(temperature=0.1)
 
 _sql_tool = make_sql_tool(_registry)
 _matplotlib_tool = make_matplotlib_tool(_registry)

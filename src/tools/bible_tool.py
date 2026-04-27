@@ -1,4 +1,4 @@
-from langchain.tools import tool
+from langchain_core.tools import tool
 import re
 
 def make_bible_tool(vector_store):

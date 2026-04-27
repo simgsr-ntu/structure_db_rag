@@ -27,7 +27,7 @@ def main():
     }
 
     store = SermonVectorStore()
-    llm = get_llm(provider_type="groq", temperature=0) # Use Groq for speed
+    llm = get_llm(temperature=0)
 
     for filename, version in files.items():
         filepath = os.path.join(bible_dir, filename)

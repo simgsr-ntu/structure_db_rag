@@ -1,6 +1,5 @@
 # src/storage/chroma_store.py
 import chromadb
-from langchain_ollama import OllamaEmbeddings
 from src.storage.reranker import Reranker
 
 class SermonVectorStore:

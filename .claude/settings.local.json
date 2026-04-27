@@ -25,7 +25,9 @@
       "Bash(grep *)",
       "Bash(python *)",
       "Bash(curl -s http://localhost:7860)",
-      "Bash(pytest tests/ -v)"
+      "Bash(pytest tests/ -v)",
+      "Bash(sqlite3 *)",
+      "Bash(curl -s http://localhost:11434/api/version)"
     ]
   }
 }
