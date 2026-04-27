@@ -93,7 +93,15 @@ class BibleEpubParser:
                     # If markers exist, iterate through descendants to find verse numbers
                     for child in p.descendants:
                         if isinstance(child, str):
-                            if self.current_v_num is not None:
+                            # Try to see if this string starts with a verse number (e.g. "1 In the beginning...")
+                            text = child.strip()
+                            v_match = re.match(r'^(\d+)\s+', text)
+                            if v_match and self.current_chapter != 0:
+                                if self.current_v_num is not None:
+                                    self._add_verse(self.current_book, self.current_chapter, self.current_v_num, "".join(self.current_v_text))
+                                self.current_v_num = int(v_match.group(1))
+                                self.current_v_text = [text[v_match.end():]]
+                            elif self.current_v_num is not None:
                                 self.current_v_text.append(child)
                         elif child.name in ['sup', 'b', 'strong', 'span']:
                             text = child.get_text().strip()

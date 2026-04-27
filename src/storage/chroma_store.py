@@ -1,4 +1,7 @@
 # src/storage/chroma_store.py
+import os
+# Suppress Hugging Face hub warnings
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 import chromadb
 from src.storage.reranker import Reranker
 
@@ -24,10 +27,13 @@ class SermonVectorStore:
 
     def _embed(self, texts: list[str]) -> list[list[float]] | None:
         if self._embeddings:
-            return self._embeddings.embed_documents(texts)
+            # Ensure no single string exceeds the model's context window (~2048 tokens)
+            # 4000 characters is a safe limit for Nomic Embed
+            safe_texts = [t[:4000] for t in texts]
+            return self._embeddings.embed_documents(safe_texts)
         return None # Let Chroma handle it
 
-    _MAX_BATCH = 500
+    _MAX_BATCH = 1
 
     def _upsert_in_batches(self, collection, chunks: list[str], metadatas: list[dict], ids: list[str]):
         for start in range(0, len(chunks), self._MAX_BATCH):

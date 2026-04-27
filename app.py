@@ -10,13 +10,16 @@ from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats
 from src.storage.sqlite_store import SermonRegistry
 from src.tools.sql_tool import make_sql_tool
 from src.tools.vector_tool import make_vector_tool
-from src.tools.bible_tool import make_bible_tool
-from src.tools.matplotlib_tool import make_matplotlib_tool
-from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, AIMessage
+from src.tools.bible_tool import make_bible_tool
+from src.tools.viz_tool import make_viz_tool
+import plotly.io as pio
+from langchain.agents import create_agent
 
 load_dotenv()
 
+# Ensure Plotly uses dark template for consistency
+pio.templates.default = "plotly_dark"
 
 def _ensure_ollama(timeout: int = 20) -> bool:
     def _is_up() -> bool:
@@ -41,8 +44,6 @@ def _ensure_ollama(timeout: int = 20) -> bool:
 
     print("⚠️  Ollama did not start within the timeout.")
     return False
-
-
 _ensure_ollama()
 
 try:
@@ -53,7 +54,7 @@ try:
     sql_tool = make_sql_tool(registry)
     vector_tool = make_vector_tool(vector_store)
     bible_tool = make_bible_tool(vector_store)
-    viz_tool = make_matplotlib_tool(registry)
+    viz_tool = make_viz_tool(registry)
 
     SYSTEM_PROMPT = (
         "You are the BBTC Sermon Intelligence Assistant for Bethesda Bedok-Tampines Church.\n\n"
@@ -66,9 +67,9 @@ try:
         "- For 'what was said about X in year Y' or 'what did speaker Z say about X', use search_sermons_tool "
         "with the year/speaker filter directly — do not run sql_query_tool first.\n"
         "- Use 'compare_bible_versions' only when the user explicitly asks to compare Bible translations.\n"
-        "- Use 'matplotlib_tool' only when the user asks for a chart or visualization. "
+        "- Use 'viz_tool' only when the user asks for a chart or visualization. "
         "Valid chart_name values: 'sermons_per_speaker', 'sermons_per_year', 'top_bible_books', 'sermons_scatter'. "
-        "When matplotlib_tool returns a file path, copy that exact path into your response verbatim — do not describe or summarise the chart data.\n\n"
+        "When viz_tool returns a file path, copy that exact path into your response verbatim — do not describe or summarise the chart data.\n\n"
         "## Grounding rules\n"
         "- Answer ONLY from data returned by the tools. Never invent sermon content, speaker names, "
         "dates, or verses.\n"
@@ -105,10 +106,9 @@ def respond(message, history):
         else:
             content = turn["content"]
             if isinstance(content, list):
-                content = " ".join(
-                    block.get("text", "") for block in content
-                    if block.get("type") == "text"
-                )
+                # Handle complex content (text + plot)
+                text_parts = [block.get("text", "") for block in content if block.get("type") == "text"]
+                content = " ".join(text_parts)
             messages.append(AIMessage(content=content))
 
     messages.append(HumanMessage(content=message))
@@ -119,12 +119,11 @@ def respond(message, history):
         if not isinstance(final, str):
             final = str(final)
 
-        # If the LLM dropped the chart path from its response, recover it from
-        # the ToolMessage so extract_chart_path can still render the image.
+        # If the LLM dropped the chart path from its response, recover it from ToolMessage
         if "/tmp/bbtc_chart_" not in final:
             import re
             for msg in result["messages"]:
-                match = re.search(r'/tmp/bbtc_chart_[a-f0-9]+\.png', str(msg.content))
+                match = re.search(r'/tmp/bbtc_chart_[a-f0-9]+\.(png|json)', str(msg.content))
                 if match:
                     final = final.rstrip() + "\n" + match.group(0)
                     break
@@ -135,119 +134,123 @@ def respond(message, history):
 
 
 custom_css = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
 
 footer {visibility: hidden}
+body { background-color: #020617; }
+
 .gradio-container {
-    background-color: #0f172a !important;
+    background-color: #020617 !important;
     color: #f8fafc;
-    font-family: 'Inter', sans-serif !important;
-    max-width: 1200px !important;
+    font-family: 'Outfit', sans-serif !important;
+    max-width: 1400px !important;
 }
 
 .sidebar {
-    background: rgba(30, 41, 59, 0.7) !important;
-    backdrop-filter: blur(10px);
-    border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
-    padding: 20px !important;
-    border-radius: 12px;
+    background: rgba(30, 41, 59, 0.3) !important;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    padding: 24px !important;
+    border-radius: 20px;
 }
 
 .chatbot-container {
-    border-radius: 16px !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    background: rgba(30, 41, 59, 0.4) !important;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    border-radius: 24px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: rgba(15, 23, 42, 0.6) !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    overflow: hidden !important;
 }
 
 .message-user {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
-    border-radius: 18px 18px 4px 18px !important;
-    padding: 12px 16px !important;
-    box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.2);
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    border-radius: 20px 20px 4px 20px !important;
+    padding: 14px 20px !important;
+    color: white !important;
+    font-weight: 500;
 }
+
 .message-assistant {
     background: #1e293b !important;
     border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    border-radius: 18px 18px 18px 4px !important;
-    padding: 12px 16px !important;
+    border-radius: 20px 20px 20px 4px !important;
+    padding: 14px 20px !important;
 }
 
 .input-container {
-    background: rgba(30, 41, 59, 0.8) !important;
+    background: rgba(30, 41, 59, 0.5) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 12px !important;
-    padding: 5px !important;
+    border-radius: 16px !important;
+    margin-top: 10px !important;
 }
 
 .btn-primary {
-    background: linear-gradient(to right, #38bdf8, #818cf8) !important;
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%) !important;
     border: none !important;
     color: white !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 12px !important;
+    transition: all 0.3s ease;
+}
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.4);
 }
 
 #title-container {
-    margin-bottom: 30px;
+    margin-bottom: 40px;
     text-align: left;
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 25px;
 }
 #title-container img {
-    height: 60px;
+    height: 70px;
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));
 }
 #title-text h1 {
-    font-size: 2.2rem;
+    font-size: 2.8rem;
     font-weight: 800;
     margin: 0;
-    background: linear-gradient(to right, #60a5fa, #a78bfa);
+    background: linear-gradient(to right, #60a5fa, #a78bfa, #f472b6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    letter-spacing: -1px;
 }
 #title-text p {
     color: #94a3b8;
-    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 400;
+    margin-top: 4px;
 }
-
-.status-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-.status-online { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
-.status-offline { background: rgba(239, 68, 68, 0.2); color: #f87171; }
 
 .stats-bar {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    background: #1e293b;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    padding: 10px 16px;
-    margin-bottom: 16px;
-    color: #94a3b8;
-    font-size: 0.875rem;
+    justify-content: space-between;
+    background: linear-gradient(to right, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.8));
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 12px 24px;
+    margin-bottom: 24px;
+    color: #cbd5e1;
+    font-size: 0.95rem;
 }
 
-@media (max-width: 768px) {
-    .gradio-container { max-width: 100% !important; }
-    .sidebar {
-        border-right: none !important;
-        border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
-    }
-    .stats-bar { flex-direction: column; gap: 6px; align-items: flex-start; }
-    #title-text h1 { font-size: 1.8rem; }
-    .message-user, .message-assistant { font-size: 0.9rem; padding: 10px 12px !important; }
+.status-badge {
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
+.status-online { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2); }
+.status-offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
 """
 
-with gr.Blocks() as demo:
+with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
     with gr.Row(elem_id="header"):
         with gr.Column(scale=4):
             gr.HTML("""
@@ -255,7 +258,7 @@ with gr.Blocks() as demo:
                     <img src='https://www.bbtc.com.sg/wp-content/uploads/2021/04/BBTC-Logo-Header.png' alt='Logo'>
                     <div id='title-text'>
                         <h1>Sermon Intelligence</h1>
-                        <p>Agentic RAG Pipeline for BBTC Sermon History</p>
+                        <p>Hybrid Agentic RAG Platform • Professional Edition</p>
                     </div>
                 </div>
             """)
@@ -265,68 +268,65 @@ with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column(scale=3):
             chatbot = gr.Chatbot(
-                min_height=400,
+                min_height=550,
                 show_label=False,
                 elem_classes="chatbot-container",
                 avatar_images=(None, "https://www.bbtc.com.sg/wp-content/uploads/2021/04/BBTC-Logo-Header.png")
             )
             with gr.Row(elem_classes="input-container"):
                 msg = gr.Textbox(
-                    placeholder="Ask about a sermon topic, verse, or summary...",
+                    placeholder="Describe the data you need or ask a theological question...",
                     container=False,
                     scale=7,
                 )
-                submit = gr.Button("🚀 Send", variant="primary", scale=1, elem_classes="btn-primary")
+                submit = gr.Button("🚀 Execute", variant="primary", scale=1, elem_classes="btn-primary")
 
-            with gr.Row():
-                gr.Examples(
-                    examples=[
-                        ["How many sermons are in the archive and who are the top 5 speakers?"],
-                        ["Show a bar chart of how many sermons were preached each year"],
-                        ["Show a bar chart of the top 10 most-preached Bible books"],
-                        ["Create a bar chart of sermon count per speaker"],
-                        ["Show a scatter plot of sermon counts by speaker and year"],
-                        ["What sermons have been preached on the book of Romans?"],
-                        ["Find sermons about forgiveness, grace, and redemption"],
-                        ["What have our pastors said about faith during trials and suffering?"],
-                        ["Find sermons that cover John 3:16 or the topic of eternal life"],
-                        ["What was the most recent sermon and what were its key points?"],
-                    ],
-                    inputs=msg,
-                    label="⚡ Quick Inquiries"
-                )
+            gr.Examples(
+                examples=[
+                    ["Show an interactive chart of how many sermons were preached each year"],
+                    ["Create an interactive bar chart of sermon count per speaker"],
+                    ["Show a scatter plot of sermon counts by speaker and year"],
+                    ["How many sermons are in the archive and who are the top 5 speakers?"],
+                    ["What was the most recent sermon and what were its key points?"],
+                    ["What have our pastors said about faith during trials and suffering?"],
+                ],
+                inputs=msg,
+                label="💡 Strategic Inquiries"
+            )
 
         with gr.Column(scale=1, elem_classes="sidebar"):
-            gr.Markdown("### ⚙️ System Status")
+            gr.Markdown("### 🛠️ System Health")
 
             vec_status = "online" if vector_store else "offline"
             ollama_status = "online" if (vector_store and vector_store._embeddings is not None) else "offline"
             gr.HTML(f"""
-                <div style='display: flex; flex-direction: column; gap: 10px;'>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span>Vector Store</span>
-                        <span class='status-badge status-{vec_status}'>{vec_status.upper()}</span>
+                <div style='display: flex; flex-direction: column; gap: 12px;'>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <span style='color: #94a3b8;'>Vector Store</span>
+                        <span class='status-badge status-{vec_status}'>{vec_status}</span>
                     </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span>Database</span>
-                        <span class='status-badge status-online'>CONNECTED</span>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <span style='color: #94a3b8;'>SQL Registry</span>
+                        <span class='status-badge status-online'>active</span>
                     </div>
-                    <div style='display: flex; justify-content: space-between;'>
-                        <span>LLM Engine</span>
-                        <span class='status-badge status-{ollama_status}'>OLLAMA</span>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <span style='color: #94a3b8;'>Inference</span>
+                        <span class='status-badge status-{ollama_status}'>ollama</span>
                     </div>
                 </div>
             """)
 
             gr.Markdown("---")
-            gr.Markdown("### 📖 About")
+            gr.Markdown("### 🎯 Capabilities")
             gr.Markdown(
-                "This assistant uses a hybrid Agentic RAG pipeline. "
-                "It routes queries between SQL metadata search and semantic vector search, "
-                "and can generate data visualisations on demand."
+                "- **Semantic Search**: Retrieval of sermon content across a decade of archives.\n"
+                "- **SQL Analytics**: High-precision metadata querying for statistics and counts.\n"
+                "- **Dynamic Viz**: Real-time generation of interactive Plotly visualizations.\n"
+                "- **Bible Context**: Multi-version Bible referencing and cross-comparison."
             )
 
-            clear = gr.Button("🗑️ Reset Conversation", variant="secondary")
+            gr.Markdown("---")
+            clear = gr.Button("🗑️ Reset Workspace", variant="secondary")
 
     def user_msg(user_message, history: list):
         if history is None:
@@ -338,31 +338,34 @@ with gr.Blocks() as demo:
             return history
 
         user_message = history[-1]["content"]
-        if isinstance(user_message, list):
-            user_message = " ".join(
-                [m["text"] for m in user_message if isinstance(m, dict) and m.get("type") == "text"]
-            )
-
         chat_history = history[:-1]
         bot_message = respond(user_message, chat_history)
 
-        if not isinstance(bot_message, str):
-            bot_message = str(bot_message)
-
         text, chart_path = extract_chart_path(bot_message)
+        
+        content = []
+        if text:
+            content.append({"type": "text", "text": text})
+            
         if chart_path:
-            content = [
-                {"type": "text", "text": text},
-                {"path": chart_path},
-            ]
-        else:
+            if chart_path.endswith('.json'):
+                try:
+                    import plotly.io as pio
+                    fig = pio.read_json(chart_path)
+                    content.append(gr.Plot(fig))
+                except Exception as e:
+                    content.append({"type": "text", "text": f"\n⚠️ Error loading interactive chart: {e}"})
+            else:
+                content.append({"type": "image", "image": {"path": chart_path}})
+
+        if not content:
             content = bot_message
 
         history.append({"role": "assistant", "content": content})
         return history
 
-    disable_submit = lambda: gr.update(value="⏳ Thinking...", interactive=False)
-    enable_submit = lambda: gr.update(value="🚀 Send", interactive=True)
+    disable_submit = lambda: gr.update(value="⏳ Processing...", interactive=False)
+    enable_submit = lambda: gr.update(value="🚀 Execute", interactive=True)
 
     msg.submit(user_msg, [msg, chatbot], [msg, chatbot], queue=True).then(
         disable_submit, None, submit
@@ -386,6 +389,5 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=port,
         css=custom_css,
-        theme=gr.themes.Default(),
         allowed_paths=["/tmp"]
     )

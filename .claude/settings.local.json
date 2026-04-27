@@ -27,7 +27,8 @@
       "Bash(curl -s http://localhost:7860)",
       "Bash(pytest tests/ -v)",
       "Bash(sqlite3 *)",
-      "Bash(curl -s http://localhost:11434/api/version)"
+      "Bash(curl -s http://localhost:11434/api/version)",
+      "Read(//Users/simgsr/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/subagent-driven-development/**)"
     ]
   }
 }

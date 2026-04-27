@@ -1,26 +1,26 @@
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.io as pio
 import sqlite3
 import os
 import uuid
 from langchain_core.tools import tool
 
+# Set dark theme by default for Plotly
+pio.templates.default = "plotly_dark"
 
-def make_matplotlib_tool(registry):
+def make_viz_tool(registry):
     db_path = registry.db_path
 
     @tool
-    def matplotlib_tool(chart_name: str) -> str:
-        """Generates a chart from live sermon data and returns the PNG file path.
+    def viz_tool(chart_name: str) -> str:
+        """Generates an interactive Plotly chart from live sermon data and returns the JSON file path.
         Supported chart_name values:
         - 'sermons_per_speaker' — bar chart of sermon count per speaker (top 10)
         - 'sermons_per_year' — bar chart of sermon count per year
         - 'top_bible_books' — bar chart of most-preached Bible books (top 10)
         - 'sermons_scatter' — bubble chart of sermon count by speaker and year
-        Returns the file path to the saved PNG."""
-        fig, ax = plt.subplots(figsize=(10, 6))
-
+        Returns the file path to the saved JSON."""
+        
         try:
             with sqlite3.connect(db_path) as conn:
                 if chart_name == "sermons_per_speaker":
@@ -30,13 +30,16 @@ def make_matplotlib_tool(registry):
                         "GROUP BY speaker ORDER BY n DESC LIMIT 10"
                     ).fetchall()
                     if not rows:
-                        plt.close(fig)
                         return "No sermon data found."
-                    labels, values = zip(*rows)
-                    ax.barh(labels, values, color="#3b82f6")
-                    ax.set_xlabel("Number of Sermons")
-                    ax.set_title("Top 10 Speakers by Sermon Count")
-                    ax.invert_yaxis()
+                    
+                    speakers, counts = zip(*rows)
+                    fig = px.bar(
+                        x=counts, y=speakers, orientation='h',
+                        title="Top 10 Speakers by Sermon Count",
+                        labels={'x': 'Number of Sermons', 'y': 'Speaker'},
+                        color=counts, color_continuous_scale='Blues'
+                    )
+                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
 
                 elif chart_name == "sermons_per_year":
                     rows = conn.execute(
@@ -45,13 +48,15 @@ def make_matplotlib_tool(registry):
                         "GROUP BY year ORDER BY year"
                     ).fetchall()
                     if not rows:
-                        plt.close(fig)
                         return "No sermon data found."
-                    labels, values = zip(*rows)
-                    ax.bar([str(y) for y in labels], values, color="#6366f1")
-                    ax.set_xlabel("Year")
-                    ax.set_ylabel("Number of Sermons")
-                    ax.set_title("Sermons per Year")
+                    
+                    years, counts = zip(*rows)
+                    fig = px.bar(
+                        x=[str(y) for y in years], y=counts,
+                        title="Sermons per Year",
+                        labels={'x': 'Year', 'y': 'Number of Sermons'},
+                        color=counts, color_continuous_scale='Viridis'
+                    )
 
                 elif chart_name == "top_bible_books":
                     rows = conn.execute(
@@ -60,13 +65,16 @@ def make_matplotlib_tool(registry):
                         "GROUP BY bible_book ORDER BY n DESC LIMIT 10"
                     ).fetchall()
                     if not rows:
-                        plt.close(fig)
                         return "No sermon data found."
-                    labels, values = zip(*rows)
-                    ax.barh(labels, values, color="#10b981")
-                    ax.set_xlabel("Number of Sermons")
-                    ax.set_title("Top 10 Preached Bible Books")
-                    ax.invert_yaxis()
+                    
+                    books, counts = zip(*rows)
+                    fig = px.bar(
+                        x=counts, y=books, orientation='h',
+                        title="Top 10 Preached Bible Books",
+                        labels={'x': 'Number of Sermons', 'y': 'Bible Book'},
+                        color=counts, color_continuous_scale='Greens'
+                    )
+                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
 
                 elif chart_name == "sermons_scatter":
                     rows = conn.execute(
@@ -75,46 +83,41 @@ def make_matplotlib_tool(registry):
                         "GROUP BY year, speaker ORDER BY year"
                     ).fetchall()
                     if not rows:
-                        plt.close(fig)
                         return "No sermon data found."
+                    
                     years = [r[0] for r in rows]
                     speakers = [r[1] for r in rows]
                     counts = [r[2] for r in rows]
-                    unique_speakers = sorted(set(speakers))
-                    speaker_idx = {s: i for i, s in enumerate(unique_speakers)}
-                    y_vals = [speaker_idx[s] for s in speakers]
-                    n_speakers = len(unique_speakers)
-                    fig.set_figheight(max(6, n_speakers * 0.5))
-                    ax.scatter(years, y_vals, s=[c * 40 for c in counts], alpha=0.6, color="#f59e0b")
-                    ax.set_yticks(range(n_speakers))
-                    ax.set_yticklabels(unique_speakers, fontsize=8)
-                    ax.set_xlabel("Year")
-                    ax.set_title("Sermon Count by Speaker and Year")
-                    ax.annotate(
-                        "Bubble size = sermon count",
-                        xy=(0.01, 0.01), xycoords="axes fraction", fontsize=8, color="gray"
+                    
+                    fig = px.scatter(
+                        x=years, y=speakers, size=counts, color=counts,
+                        title="Sermon Count by Speaker and Year",
+                        labels={'x': 'Year', 'y': 'Speaker', 'size': 'Count'},
+                        hover_name=speakers, size_max=40,
+                        color_continuous_scale='Plasma'
                     )
 
                 else:
-                    plt.close(fig)
                     return (
                         f"Unknown chart '{chart_name}'. "
                         "Valid options: sermons_per_speaker, sermons_per_year, "
                         "top_bible_books, sermons_scatter."
                     )
 
+            # Update layout for a more premium look
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font_family="Inter, sans-serif",
+                title_font_size=20,
+                margin=dict(l=40, r=40, t=60, b=40),
+            )
+            
+            file_path = os.path.join("/tmp", f"bbtc_chart_{uuid.uuid4().hex[:8]}.json")
+            fig.write_json(file_path)
+            return file_path
+
         except Exception as e:
-            plt.close(fig)
             return f"Chart generation error: {e}"
 
-        plt.tight_layout()
-        file_path = os.path.join("/tmp", f"bbtc_chart_{uuid.uuid4().hex[:8]}.png")
-        try:
-            fig.savefig(file_path)
-        except Exception as e:
-            plt.close(fig)
-            return f"Chart save error: {e}"
-        plt.close(fig)
-        return file_path
-
-    return matplotlib_tool
+    return viz_tool

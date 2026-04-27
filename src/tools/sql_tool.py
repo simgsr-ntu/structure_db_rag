@@ -6,13 +6,11 @@ def make_sql_tool(registry):
 
     @tool
     def sql_query_tool(query: str) -> str:
-        """Executes a SQL query against the sermons SQLite database.
-        Schema: sermons(sermon_id TEXT PRIMARY KEY, filename TEXT, url TEXT,
-        speaker TEXT, date TEXT YYYY-MM-DD, series TEXT, bible_book TEXT,
-        primary_verse TEXT, language TEXT ('English'|'Mandarin'),
-        file_type TEXT (pdf|pptx|docx), year INTEGER,
-        status TEXT (extracted|processed|indexed|failed), date_scraped TEXT).
-        Returns up to 50 rows. Use COUNT(), GROUP BY, ORDER BY as needed."""
+        """Executes a SQL query against the church database.
+        Tables:
+        - sermons: filename, url, speaker, date, series, bible_book, primary_verse, language, file_type, year, status.
+        - sermon_intelligence: sermon_id, speaker (normalized), primary_verse, verses_used (comma-separated), summary.
+        Use JOIN on sermon_id if needed. Returns up to 50 rows."""
         print(f"DEBUG: Executing SQL: {query}")
         try:
             with sqlite3.connect(db_path) as conn:
@@ -28,22 +26,10 @@ def make_sql_tool(registry):
                 return result
         except Exception as e:
             schema = (
-                "sermons("
-                "sermon_id TEXT PRIMARY KEY, "
-                "filename TEXT, "
-                "url TEXT, "
-                "speaker TEXT, "
-                "date TEXT (YYYY-MM-DD), "
-                "series TEXT, "
-                "bible_book TEXT, "
-                "primary_verse TEXT, "
-                "language TEXT ('English'|'Mandarin'), "
-                "file_type TEXT (pdf|pptx|docx), "
-                "year INTEGER, "
-                "status TEXT (extracted|processed|indexed|failed),"
-                "date_scraped TEXT"
-                ")"
+                "Tables:\n"
+                "1. sermons(sermon_id, filename, url, speaker, date, series, bible_book, primary_verse, language, file_type, year, status)\n"
+                "2. sermon_intelligence(sermon_id, speaker, primary_verse, verses_used, summary)"
             )
-            return f"SQL Error: {str(e)}. Full schema: {schema}"
+            return f"SQL Error: {str(e)}. Full schema:\n{schema}"
 
     return sql_query_tool

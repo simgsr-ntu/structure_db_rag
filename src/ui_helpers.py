@@ -6,14 +6,15 @@ import sqlite3
 def extract_chart_path(response: str) -> tuple[str, str | None]:
     """Extract a chart file path from agent response text.
     Returns (cleaned_text, chart_path) or (original_text, None) if no path found.
+    Supports .png (legacy) and .json (plotly).
     """
-    match = re.search(r'/tmp/bbtc_chart_[a-f0-9]+\.png', response)
+    match = re.search(r'/tmp/bbtc_chart_[a-f0-9]+\.(png|json)', response)
     if match is None:
         return response, None
     chart_path = match.group(0)
     cleaned = (response[:match.start()] + response[match.end():]).strip().rstrip(':').strip()
     if not cleaned:
-        cleaned = "Here is the chart:"
+        cleaned = "Here is the interactive chart:" if chart_path.endswith('.json') else "Here is the chart:"
     return cleaned, chart_path
 
 
