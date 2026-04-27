@@ -4,13 +4,6 @@ from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
 from src.llm import get_llm
 from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats_bar
-
-load_dotenv()
-
-# Map GEMINI_API_KEY to GOOGLE_API_KEY if needed
-if os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY")
-
 from src.storage.sqlite_store import SermonRegistry
 from src.tools.sql_tool import make_sql_tool
 from src.tools.vector_tool import make_vector_tool
@@ -19,18 +12,18 @@ from src.tools.matplotlib_tool import make_matplotlib_tool
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, AIMessage
 
-# Initialize
+load_dotenv()
+
 try:
     registry = SermonRegistry()
     vector_store = SermonVectorStore()
-    llm = get_llm(provider_type="groq", temperature=0.1)
-    
-    # Tools
+    llm = get_llm(temperature=0.1)
+
     sql_tool = make_sql_tool(registry)
     vector_tool = make_vector_tool(vector_store)
     bible_tool = make_bible_tool(vector_store)
     viz_tool = make_matplotlib_tool(registry)
-    
+
     SYSTEM_PROMPT = (
         "You are the BBTC Sermon Intelligence Assistant for Bethesda Bedok-Tampines Church.\n\n"
         "## Tool routing\n"
@@ -43,7 +36,7 @@ try:
         "with the year/speaker filter directly — do not run sql_query_tool first.\n"
         "- Use 'compare_bible_versions' only when the user explicitly asks to compare Bible translations.\n"
         "- Use 'matplotlib_tool' only when the user asks for a chart or visualization. "
-        "Valid chart_name values: 'sermons_per_speaker', 'sermons_per_year', 'top_bible_books'.\n\n"
+        "Valid chart_name values: 'sermons_per_speaker', 'sermons_per_year', 'top_bible_books', 'sermons_scatter'.\n\n"
         "## Grounding rules\n"
         "- Answer ONLY from data returned by the tools. Never invent sermon content, speaker names, "
         "dates, or verses.\n"
@@ -52,13 +45,14 @@ try:
         "- If you need more information to answer precisely, call the relevant tool again with "
         "a refined query before responding.\n"
     )
-    
+
     agent = create_agent(llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], system_prompt=SYSTEM_PROMPT)
 
 except Exception as e:
     print(f"⚠️ Initialization warning: {e}")
     agent = None
     registry = None
+    vector_store = None
 
 _stats_bar_html = (
     render_stats_bar(fetch_archive_stats(registry.db_path))
@@ -66,22 +60,11 @@ _stats_bar_html = (
     else render_stats_bar(None)
 )
 
-def respond(message, history, provider):
-    # Dynamic LLM selection
-    try:
-        if provider == "Gemini (Cloud)":
-            current_llm = get_llm(provider_type="gemini", temperature=0.1, gemini_model="gemini-1.5-flash")
-        elif provider == "Groq (Cloud)":
-            current_llm = get_llm(provider_type="groq", temperature=0.1)
-        else:
-            current_llm = get_llm(provider_type="ollama", temperature=0.1)
-        
-        # Re-initialize agent with the chosen LLM
-        current_agent = create_agent(current_llm, tools=[sql_tool, vector_tool, bible_tool, viz_tool], system_prompt=SYSTEM_PROMPT)
-    except Exception as e:
-        return f"⚠️ Initialization error: {e}"
 
-    # Convert Gradio history to LangChain messages
+def respond(message, history):
+    if agent is None:
+        return "⚠️ Agent not initialized. Check that Ollama is running."
+
     truncated_history = history[-6:] if len(history) > 6 else history
     messages = []
     for turn in truncated_history:
@@ -95,19 +78,16 @@ def respond(message, history, provider):
                     if block.get("type") == "text"
                 )
             messages.append(AIMessage(content=content))
-    
+
     messages.append(HumanMessage(content=message))
-    
-    print(f"DEBUG: Processing request [{provider}]: {message}")
+
     try:
-        result = current_agent.invoke({"messages": messages})
-        print(f"DEBUG: Request completed successfully.")
+        result = agent.invoke({"messages": messages})
         return result["messages"][-1].content
     except Exception as e:
-        print(f"DEBUG: Request failed with error: {e}")
         return f"⚠️ An error occurred while processing your request: {e}"
 
-# Custom CSS for a professional, premium look
+
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 
@@ -119,7 +99,6 @@ footer {visibility: hidden}
     max-width: 1200px !important;
 }
 
-/* Sidebar Styling */
 .sidebar {
     background: rgba(30, 41, 59, 0.7) !important;
     backdrop-filter: blur(10px);
@@ -128,7 +107,6 @@ footer {visibility: hidden}
     border-radius: 12px;
 }
 
-/* Chatbot Area */
 .chatbot-container {
     border-radius: 16px !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -136,7 +114,6 @@ footer {visibility: hidden}
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
-/* Message Bubbles */
 .message-user {
     background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
     border-radius: 18px 18px 4px 18px !important;
@@ -150,7 +127,6 @@ footer {visibility: hidden}
     padding: 12px 16px !important;
 }
 
-/* Input Area */
 .input-container {
     background: rgba(30, 41, 59, 0.8) !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -158,7 +134,6 @@ footer {visibility: hidden}
     padding: 5px !important;
 }
 
-/* Buttons */
 .btn-primary {
     background: linear-gradient(to right, #38bdf8, #818cf8) !important;
     border: none !important;
@@ -215,25 +190,14 @@ footer {visibility: hidden}
 }
 
 @media (max-width: 768px) {
-    .gradio-container {
-        max-width: 100% !important;
-    }
+    .gradio-container { max-width: 100% !important; }
     .sidebar {
         border-right: none !important;
         border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
     }
-    .stats-bar {
-        flex-direction: column;
-        gap: 6px;
-        align-items: flex-start;
-    }
-    #title-text h1 {
-        font-size: 1.8rem;
-    }
-    .message-user, .message-assistant {
-        font-size: 0.9rem;
-        padding: 10px 12px !important;
-    }
+    .stats-bar { flex-direction: column; gap: 6px; align-items: flex-start; }
+    #title-text h1 { font-size: 1.8rem; }
+    .message-user, .message-assistant { font-size: 0.9rem; padding: 10px 12px !important; }
 }
 """
 
@@ -253,7 +217,6 @@ with gr.Blocks() as demo:
     gr.HTML(_stats_bar_html)
 
     with gr.Row():
-        # Main Chat Area
         with gr.Column(scale=3):
             chatbot = gr.Chatbot(
                 min_height=400,
@@ -268,7 +231,7 @@ with gr.Blocks() as demo:
                     scale=7,
                 )
                 submit = gr.Button("🚀 Send", variant="primary", scale=1, elem_classes="btn-primary")
-            
+
             with gr.Row():
                 gr.Examples(
                     examples=[
@@ -276,36 +239,20 @@ with gr.Blocks() as demo:
                         ["Show a bar chart of how many sermons were preached each year"],
                         ["Show a bar chart of the top 10 most-preached Bible books"],
                         ["Create a bar chart of sermon count per speaker"],
+                        ["Show a scatter plot of sermon counts by speaker and year"],
                         ["What sermons have been preached on the book of Romans?"],
                         ["Find sermons about forgiveness, grace, and redemption"],
                         ["What have our pastors said about faith during trials and suffering?"],
                         ["Find sermons that cover John 3:16 or the topic of eternal life"],
-                        ["Compare what different speakers have said about the Holy Spirit"],
                         ["What was the most recent sermon and what were its key points?"],
                     ],
                     inputs=msg,
                     label="⚡ Quick Inquiries"
                 )
 
-        # Sidebar Settings
         with gr.Column(scale=1, elem_classes="sidebar"):
-            gr.Markdown("### ⚙️ Engine Settings")
-            
-            providers = []
-            if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"): providers.append("Gemini (Cloud)")
-            if os.getenv("GROQ_API_KEY"): providers.append("Groq (Cloud)")
-            providers.append("Ollama (Local)")
-            
-            provider_radio = gr.Radio(
-                choices=providers,
-                value=providers[0],
-                label="AI Brain",
-                info="Switch providers if you hit rate limits."
-            )
-            
-            gr.Markdown("---")
-            gr.Markdown("### 📡 System Status")
-            
+            gr.Markdown("### ⚙️ System Status")
+
             vec_status = "online" if vector_store else "offline"
             gr.HTML(f"""
                 <div style='display: flex; flex-direction: column; gap: 10px;'>
@@ -317,25 +264,29 @@ with gr.Blocks() as demo:
                         <span>Database</span>
                         <span class='status-badge status-online'>CONNECTED</span>
                     </div>
+                    <div style='display: flex; justify-content: space-between;'>
+                        <span>LLM Engine</span>
+                        <span class='status-badge status-online'>OLLAMA</span>
+                    </div>
                 </div>
             """)
-            
+
             gr.Markdown("---")
             gr.Markdown("### 📖 About")
             gr.Markdown(
                 "This assistant uses a hybrid Agentic RAG pipeline. "
-                "It can query SQL for statistics and search sermon text for semantic context."
+                "It routes queries between SQL metadata search and semantic vector search, "
+                "and can generate data visualisations on demand."
             )
-            
+
             clear = gr.Button("🗑️ Reset Conversation", variant="secondary")
 
-    # Message Handling Logic
     def user_msg(user_message, history: list):
         if history is None:
             history = []
         return "", history + [{"role": "user", "content": user_message}]
 
-    def bot_msg(history: list, provider):
+    def bot_msg(history: list):
         if not history or history[-1]["role"] != "user":
             return history
 
@@ -346,7 +297,7 @@ with gr.Blocks() as demo:
             )
 
         chat_history = history[:-1]
-        bot_message = respond(user_message, chat_history, provider)
+        bot_message = respond(user_message, chat_history)
 
         if not isinstance(bot_message, str):
             bot_message = str(bot_message)
@@ -369,14 +320,14 @@ with gr.Blocks() as demo:
     msg.submit(user_msg, [msg, chatbot], [msg, chatbot], queue=True).then(
         disable_submit, None, submit
     ).then(
-        bot_msg, [chatbot, provider_radio], chatbot
+        bot_msg, [chatbot], chatbot
     ).then(
         enable_submit, None, submit
     )
     submit.click(user_msg, [msg, chatbot], [msg, chatbot], queue=True).then(
         disable_submit, None, submit
     ).then(
-        bot_msg, [chatbot, provider_radio], chatbot
+        bot_msg, [chatbot], chatbot
     ).then(
         enable_submit, None, submit
     )
@@ -387,7 +338,7 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
-        css=custom_css, 
-        theme=gr.themes.Default(), 
+        css=custom_css,
+        theme=gr.themes.Default(),
         allowed_paths=["/tmp"]
     )
