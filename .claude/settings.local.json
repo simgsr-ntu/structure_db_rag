@@ -32,7 +32,10 @@
       "Bash(.venv/bin/python *)",
       "Bash(/Users/simgsr/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/start-server.sh *)",
       "Bash(ollama list *)",
-      "Bash(ollama serve *)"
+      "Bash(ollama serve *)",
+      "Bash([ -f \"/Users/simgsr/Documents/simgsr-ntu/capstone/structure_db_rag/$file\" ])",
+      "Bash([ -d \"/Users/simgsr/Documents/simgsr-ntu/capstone/structure_db_rag/$dir\" ])",
+      "Bash(/Users/simgsr/Documents/simgsr-ntu/capstone/structure_db_rag/.venv/bin/python -m pytest tests/test_file_classifier.py -v)"
     ]
   }
 }
