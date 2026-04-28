@@ -14,16 +14,22 @@ class SermonVectorStore:
         if self._embeddings is None:
             try:
                 from langchain_ollama import OllamaEmbeddings
-                self._embeddings = OllamaEmbeddings(model="nomic-embed-text")
+                self._embeddings = OllamaEmbeddings(model="BGE-M3")
                 self._embeddings.embed_query("test")
+                print("✅ Using BGE-M3 embeddings via Ollama.")
             except Exception:
-                print("⚠️  Ollama not available. Using local HuggingFace embeddings (all-mpnet-base-v2, 768-dim).")
-                from langchain_community.embeddings import HuggingFaceEmbeddings
-                self._embeddings = HuggingFaceEmbeddings(
-                    model_name="sentence-transformers/all-mpnet-base-v2",
-                    model_kwargs={"device": "cpu"},
-                    encode_kwargs={"normalize_embeddings": True},
-                )
+                print("⚠️  Ollama BGE-M3 unavailable. Falling back to nomic-embed-text.")
+                try:
+                    from langchain_ollama import OllamaEmbeddings
+                    self._embeddings = OllamaEmbeddings(model="nomic-embed-text")
+                    self._embeddings.embed_query("test")
+                except Exception:
+                    from langchain_community.embeddings import HuggingFaceEmbeddings
+                    self._embeddings = HuggingFaceEmbeddings(
+                        model_name="sentence-transformers/all-mpnet-base-v2",
+                        model_kwargs={"device": "cpu"},
+                        encode_kwargs={"normalize_embeddings": True},
+                    )
         
         self._sermons = self._client.get_or_create_collection("sermon_collection")
         self._bible = self._client.get_or_create_collection("bible_collection")
@@ -31,9 +37,8 @@ class SermonVectorStore:
 
     def _embed(self, texts: list[str]) -> list[list[float]] | None:
         if self._embeddings:
-            # Ensure no single string exceeds the model's context window (~2048 tokens)
-            # 4000 characters is a safe limit for Nomic Embed
-            safe_texts = [t[:4000] for t in texts]
+            # 8000 characters is a safe limit for BGE-M3
+            safe_texts = [t[:8000] for t in texts]
             return self._embeddings.embed_documents(safe_texts)
         return None # Let Chroma handle it
 
