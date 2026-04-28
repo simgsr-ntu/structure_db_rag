@@ -10,6 +10,7 @@ import fitz  # PyMuPDF
 from docx import Document
 from pptx import Presentation
 from src.storage.sqlite_store import SermonRegistry
+from src.ingestion.file_classifier import classify_file
 import urllib.parse
 
 _RESOURCE_EXTENSIONS = (".pdf", ".pptx", ".ppt", ".docx", ".doc")
@@ -109,8 +110,14 @@ class BBTCScraper:
         basename = os.path.basename(url.split('?')[0])
         basename = urllib.parse.unquote(basename)
         filename = f"{lang}_{year}_{basename}"
+
+        # Skip handout files before downloading
+        if classify_file(filename) == "handout":
+            print(f"⏭️  Skipping handout: {filename}")
+            return
+
         staging_path = os.path.join(self._staging_dir, filename)
-        
+
         # Download if not exists in staging
         if not os.path.exists(staging_path):
             try:
