@@ -1,7 +1,6 @@
-import sqlite3
-import os
-from datetime import datetime, timezone
+import sqlite3, os, re
 from src.storage.normalize_speaker import normalize_speaker
+
 
 class SermonRegistry:
     def __init__(self, db_path: str = "data/sermons.db"):
@@ -11,115 +10,104 @@ class SermonRegistry:
 
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS sermons (
-                    sermon_id TEXT PRIMARY KEY,
-                    filename TEXT,
-                    url TEXT UNIQUE,
-                    speaker TEXT,
-                    date TEXT,
-                    series TEXT,
-                    bible_book TEXT,
-                    primary_verse TEXT,
-                    topic TEXT,
-                    language TEXT,
-                    file_type TEXT,
-                    year INTEGER,
-                    status TEXT,
-                    date_scraped TEXT
-                )
+                    sermon_id  TEXT PRIMARY KEY,
+                    date       TEXT,
+                    year       INTEGER,
+                    language   TEXT,
+                    speaker    TEXT,
+                    topic      TEXT,
+                    theme      TEXT,
+                    summary    TEXT,
+                    key_verse  TEXT,
+                    ng_file    TEXT,
+                    ps_file    TEXT,
+                    status     TEXT
+                );
+                CREATE TABLE IF NOT EXISTS verses (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sermon_id   TEXT REFERENCES sermons(sermon_id),
+                    verse_ref   TEXT,
+                    book        TEXT,
+                    chapter     INTEGER,
+                    verse_start INTEGER,
+                    verse_end   INTEGER,
+                    is_key_verse INTEGER DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_verses_sermon ON verses(sermon_id);
+                CREATE INDEX IF NOT EXISTS idx_sermons_year ON sermons(year);
+                CREATE INDEX IF NOT EXISTS idx_sermons_speaker ON sermons(speaker);
             """)
-            # Migrate existing databases that predate the topic column
-            existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(sermons)").fetchall()]
-            if "topic" not in existing_cols:
-                conn.execute("ALTER TABLE sermons ADD COLUMN topic TEXT")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS bible_versions (
-                    version_id TEXT PRIMARY KEY,
-                    filename TEXT,
-                    status TEXT,
-                    date_indexed TEXT
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS sermon_intelligence (
-                    sermon_id TEXT PRIMARY KEY,
-                    speaker TEXT,
-                    primary_verse TEXT,
-                    verses_used TEXT,
-                    summary TEXT,
-                    bible_book TEXT,
-                    FOREIGN KEY (sermon_id) REFERENCES sermons (sermon_id)
-                )
-            """)
-            existing_intel_cols = [r[1] for r in conn.execute("PRAGMA table_info(sermon_intelligence)").fetchall()]
-            if "bible_book" not in existing_intel_cols:
-                conn.execute("ALTER TABLE sermon_intelligence ADD COLUMN bible_book TEXT")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_url ON sermons(url)")
 
-    def is_new(self, url: str) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT 1 FROM sermons WHERE url = ?", (url,))
-            return cursor.fetchone() is None
-
-    def insert_sermon(self, record: dict):
-        if 'speaker' in record:
-            record['speaker'] = normalize_speaker(record['speaker'])
-        # Derive year from date when not explicitly provided
-        if not record.get('year') and record.get('date'):
+    def upsert_sermon(self, record: dict):
+        if record.get("speaker"):
+            record["speaker"] = normalize_speaker(record["speaker"]) or record["speaker"]
+        if not record.get("year") and record.get("date"):
             try:
-                record['year'] = int(record['date'][:4])
+                record["year"] = int(record["date"][:4])
             except (ValueError, TypeError):
                 pass
         cols = ", ".join(record.keys())
         placeholders = ", ".join(["?"] * len(record))
-        sql = f"INSERT OR REPLACE INTO sermons ({cols}) VALUES ({placeholders})"
+        updates = ", ".join(f"{k} = excluded.{k}" for k in record if k != "sermon_id")
+        sql = (
+            f"INSERT INTO sermons ({cols}) VALUES ({placeholders}) "
+            f"ON CONFLICT(sermon_id) DO UPDATE SET {updates}"
+        )
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(sql, list(record.values()))
 
-    def normalize_all_speakers(self):
-        """Clean and consolidate all speaker names in the database."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT speaker FROM sermons WHERE speaker IS NOT NULL")
-            speakers = [row[0] for row in cursor.fetchall()]
-            
-            for original in speakers:
-                normalized = normalize_speaker(original)
-                if normalized != original:
-                    cursor.execute(
-                        "UPDATE sermons SET speaker = ? WHERE speaker = ?", 
-                        (normalized, original)
-                    )
-            conn.commit()
-            
-    def insert_intelligence(self, intel_record: dict):
-        """Insert or update sermon intelligence data."""
-        cols = ", ".join(intel_record.keys())
-        placeholders = ", ".join(["?"] * len(intel_record))
-        sql = f"INSERT OR REPLACE INTO sermon_intelligence ({cols}) VALUES ({placeholders})"
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(sql, list(intel_record.values()))
-
-    def mark_processed(self, url: str, status: str = "processed"):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("UPDATE sermons SET status = ? WHERE url = ?", (status, url))
-
-    def get_all_sermons(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("SELECT * FROM sermons")
-            return [dict(row) for row in cursor.fetchall()]
-
-    def get_indexed_bibles(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("SELECT * FROM bible_versions WHERE status = 'indexed'")
-            return [dict(row) for row in cursor.fetchall()]
-
-    def mark_bible_indexed(self, version_id: str, filename: str):
+    def insert_verse(self, record: dict):
+        cols = ", ".join(record.keys())
+        placeholders = ", ".join(["?"] * len(record))
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO bible_versions (version_id, filename, status, date_indexed) VALUES (?, ?, ?, ?)",
-                (version_id, filename, "indexed", datetime.now().isoformat())
+                f"INSERT OR IGNORE INTO verses ({cols}) VALUES ({placeholders})",
+                list(record.values()),
             )
+
+    def sermon_exists(self, sermon_id: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            return conn.execute(
+                "SELECT 1 FROM sermons WHERE sermon_id = ?", (sermon_id,)
+            ).fetchone() is not None
+
+    def ng_file_indexed(self, ng_file: str) -> bool:
+        with sqlite3.connect(self.db_path) as conn:
+            return conn.execute(
+                "SELECT 1 FROM sermons WHERE ng_file = ? AND status = 'indexed'",
+                (ng_file,)
+            ).fetchone() is not None
+
+    def get_sermon(self, sermon_id: str) -> dict | None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM sermons WHERE sermon_id = ?", (sermon_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_pending_sermons(self) -> list[dict]:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM sermons WHERE status NOT IN ('indexed', 'failed')"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_all_sermons(self) -> list[dict]:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            return [dict(r) for r in conn.execute("SELECT * FROM sermons").fetchall()]
+
+    def mark_status(self, sermon_id: str, status: str):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE sermons SET status = ? WHERE sermon_id = ?",
+                (status, sermon_id),
+            )
+
+    def wipe(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript("DELETE FROM verses; DELETE FROM sermons;")
