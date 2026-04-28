@@ -1,4 +1,4 @@
-import sqlite3, os, re
+import sqlite3, os
 from src.storage.normalize_speaker import normalize_speaker
 
 
@@ -33,7 +33,8 @@ class SermonRegistry:
                     chapter     INTEGER,
                     verse_start INTEGER,
                     verse_end   INTEGER,
-                    is_key_verse INTEGER DEFAULT 0
+                    is_key_verse INTEGER DEFAULT 0,
+                    UNIQUE(sermon_id, verse_ref)
                 );
                 CREATE INDEX IF NOT EXISTS idx_verses_sermon ON verses(sermon_id);
                 CREATE INDEX IF NOT EXISTS idx_sermons_year ON sermons(year);
@@ -42,7 +43,7 @@ class SermonRegistry:
 
     def upsert_sermon(self, record: dict):
         if record.get("speaker"):
-            record["speaker"] = normalize_speaker(record["speaker"]) or record["speaker"]
+            record["speaker"] = normalize_speaker(record["speaker"])
         if not record.get("year") and record.get("date"):
             try:
                 record["year"] = int(record["date"][:4])
@@ -92,7 +93,7 @@ class SermonRegistry:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM sermons WHERE status NOT IN ('indexed', 'failed')"
+                "SELECT * FROM sermons WHERE status IS NULL OR status NOT IN ('indexed', 'failed')"
             ).fetchall()
             return [dict(r) for r in rows]
 
