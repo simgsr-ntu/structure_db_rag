@@ -15,11 +15,11 @@ def make_viz_tool(registry):
     def viz_tool(chart_name: str) -> str:
         """Generates an interactive Plotly chart from live sermon data and returns the JSON file path.
         Supported chart_name values:
-        - 'sermons_per_speaker' — bar chart of sermon count per speaker (top 10)
+        - 'sermons_per_speaker' — bar chart of sermon count per speaker (top 15)
         - 'sermons_per_year' — bar chart of sermon count per year
-        - 'top_bible_books' — bar chart of most-preached Bible books (top 10)
+        - 'verses_per_book' — bar chart of most-preached Bible books from verses table (top 15)
         - 'sermons_scatter' — bubble chart of sermon count by speaker and year
-        Returns the file path to the saved JSON."""
+        Returns the file path to the saved Plotly JSON."""
         
         try:
             with sqlite3.connect(db_path) as conn:
@@ -27,7 +27,7 @@ def make_viz_tool(registry):
                     rows = conn.execute(
                         "SELECT speaker, COUNT(*) as n FROM sermons "
                         "WHERE speaker IS NOT NULL AND speaker != '' "
-                        "GROUP BY speaker ORDER BY n DESC LIMIT 10"
+                        "GROUP BY speaker ORDER BY n DESC LIMIT 15"
                     ).fetchall()
                     if not rows:
                         return "No sermon data found."
@@ -58,23 +58,22 @@ def make_viz_tool(registry):
                         color=counts, color_continuous_scale='Viridis'
                     )
 
-                elif chart_name == "top_bible_books":
+                elif chart_name == "verses_per_book":
                     rows = conn.execute(
-                        "SELECT bible_book, COUNT(*) as n FROM sermons "
-                        "WHERE bible_book IS NOT NULL AND bible_book != '' "
-                        "GROUP BY bible_book ORDER BY n DESC LIMIT 10"
+                        "SELECT book, COUNT(*) as n FROM verses "
+                        "WHERE book IS NOT NULL AND book != '' "
+                        "GROUP BY book ORDER BY n DESC LIMIT 15"
                     ).fetchall()
                     if not rows:
-                        return "No sermon data found."
-                    
+                        return "No verse data found. Run ingest.py first."
                     books, counts = zip(*rows)
                     fig = px.bar(
                         x=counts, y=books, orientation='h',
-                        title="Top 10 Preached Bible Books",
-                        labels={'x': 'Number of Sermons', 'y': 'Bible Book'},
+                        title="Top 15 Preached Bible Books",
+                        labels={'x': 'Times Preached', 'y': 'Bible Book'},
                         color=counts, color_continuous_scale='Greens'
                     )
-                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False)
+                    fig.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
 
                 elif chart_name == "sermons_scatter":
                     rows = conn.execute(
@@ -107,10 +106,10 @@ def make_viz_tool(registry):
                     return (
                         f"Unknown chart '{chart_name}'. "
                         "Valid options: sermons_per_speaker, sermons_per_year, "
-                        "top_bible_books, sermons_scatter."
+                        "verses_per_book, sermons_scatter."
                     )
 
-            left_margin = 180 if chart_name in ("sermons_per_speaker", "top_bible_books", "sermons_scatter") else 60
+            left_margin = 180 if chart_name in ("sermons_per_speaker", "verses_per_book", "sermons_scatter") else 60
             fig.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',

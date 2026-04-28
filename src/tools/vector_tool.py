@@ -3,12 +3,13 @@ from src.storage.chroma_store import SermonVectorStore
 
 
 def make_vector_tool(vector_store: SermonVectorStore):
+
     @tool
     def search_sermons_tool(query: str, year: int | None = None, speaker: str | None = None) -> str:
-        """Searches sermon text for relevant excerpts using semantic similarity.
+        """Searches sermon text and summaries using semantic similarity.
         Use for 'What did the pastor say about X?' or 'Find sermons about Y'.
-        Optionally filter by year (integer, e.g. 2024) or speaker (exact name string).
-        Returns excerpts with filename, speaker, date, and verse citations."""
+        Optionally filter by year (integer e.g. 2024) or speaker (partial name e.g. 'Chua').
+        Returns excerpts with topic, speaker, date, and key verse."""
 
         where: dict | None = None
         if year is not None and speaker:
@@ -20,14 +21,14 @@ def make_vector_tool(vector_store: SermonVectorStore):
 
         results = vector_store.search_sermons(query, k=5, where=where)
         if not results:
-            return "No relevant sermon excerpts found."
+            return "No relevant sermon content found."
 
         parts = []
         for res in results:
             m = res.get("metadata") or {}
             header = (
-                f"[{m.get('filename') or 'unknown'} | {m.get('speaker') or 'Unknown'} "
-                f"| {m.get('date') or ''} | {m.get('primary_verse') or ''}]"
+                f"[{m.get('topic') or 'Unknown Topic'} | {m.get('speaker') or 'Unknown'} "
+                f"| {m.get('date') or ''} | {m.get('key_verse') or ''}]"
             )
             parts.append(f"{header}\n{res['content']}")
 
