@@ -8,7 +8,7 @@ Two conventions exist:
 
 import re
 from src.ingestion.speaker_from_filename import speaker_from_filename
-from src.storage.normalize_speaker import normalize_speaker
+from src.storage.normalize_speaker import normalize_speaker, normalize_speaker_strict
 
 _MONTHS = {
     'jan': 1, 'january': 1, 'feb': 2, 'february': 2,
@@ -22,12 +22,13 @@ _MONTHS = {
 # Removes the cell-guide suffix and everything after it
 _MARKER_RE = re.compile(
     r'[-_](?:message[-_]?summary[-_]?)?'
-    r'(?:members?(?:27)?|leaders?|cell)[-_](?:guide|copy|guide[-_]updated).*',
+    r'(?:members?(?:27)?|leaders?|cell)[-_]?(?:guide|copy|guide[-_]updated).*',
     re.IGNORECASE,
 )
 
 # Speaker title words that signal the start of a speaker segment
-_TITLE_RE = re.compile(r'\b(SP|DSP|Ps|Pastor|Elder|Dr|Rev)\b', re.IGNORECASE)
+# Use (?<![A-Za-z]) instead of \b so that _DSP and _Ps after underscores also match
+_TITLE_RE = re.compile(r'(?<![A-Za-z])(SP|DSP|Ps|Pastor|Elder|Dr|Rev)(?![A-Za-z])', re.IGNORECASE)
 
 # CamelCase splitter
 _CAMEL_RE = re.compile(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])')
@@ -100,11 +101,11 @@ def _parse_leading_date(s: str) -> tuple[str | None, str]:
 def _search_date_month_year(s: str) -> str | None:
     """Search mid-string for a dd-Month-yyyy pattern (single day, not just leading)."""
     m = re.search(
-        r'(\d{1,2})(?:[-_]\d{1,2})?[-_]?'
+        r'\b([0-2]?\d|3[01])(?:[-_]\d{1,2})?[-_]?'
         r'(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may'
         r'|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?'
         r'|nov(?:ember)?|dec(?:ember)?)[a-z]*'
-        r'[-_]?(\d{2,4})',
+        r'[-_]?(20\d{2}|\d{2})\b',
         s, flags=re.IGNORECASE,
     )
     if not m:
@@ -129,11 +130,15 @@ def parse_cell_guide_filename(filename: str) -> dict:
         date_str, after = _parse_leading_date(core)
         after = after.strip('-_ ')
 
-        by_parts = re.split(r'-by-', after, maxsplit=1, flags=re.IGNORECASE)
-        if len(by_parts) == 2:
-            topic_raw, speaker_raw = by_parts
+        last_by = after.lower().rfind('-by-')
+        if last_by >= 0:
+            topic_raw = after[:last_by]
+            speaker_raw = after[last_by + 4:]
+            speaker_raw = re.sub(r'[_\-](?:notes?|handout|slides?|summary|ppt|v\d[\w.]*).*$', '', speaker_raw, flags=re.IGNORECASE)
+            # Strip trailing date suffixes like -2016-03-05_06
+            speaker_raw = re.sub(r'[-_]\d{4}[-_]\d{2}[-_]\d{2}.*$', '', speaker_raw)
             topic = _smart_title(topic_raw.replace('-', ' ').strip())
-            speaker = normalize_speaker(speaker_raw.replace('-', ' ').strip())
+            speaker = normalize_speaker(speaker_raw.replace('-', ' ').strip()) or speaker_from_filename(filename)
         else:
             title_m = _TITLE_RE.search(after)
             if title_m:
@@ -142,15 +147,26 @@ def parse_cell_guide_filename(filename: str) -> dict:
                 topic = _smart_title(topic_raw.replace('-', ' ').strip())
                 speaker = normalize_speaker(speaker_raw)
             else:
-                topic = _smart_title(after.replace('-', ' ').strip()) or None
-                speaker = speaker_from_filename(filename)
+                # Last resort: only accept known canonical speakers to avoid returning topic words
+                name_m = re.search(r'(?:^|[-_])([A-Z][a-z]+(?:[-][A-Z][a-z]+)+)$', after)
+                if name_m:
+                    candidate = name_m.group(1).replace('-', ' ')
+                    topic_raw = after[:name_m.start()].strip('-_ ')
+                    speaker = normalize_speaker_strict(candidate)
+                    topic = _smart_title(topic_raw.replace('-', ' ').strip()) or None
+                else:
+                    topic = _smart_title(after.replace('-', ' ').strip()) or None
+                    speaker = speaker_from_filename(filename)
 
         return {"speaker": speaker, "date": date_str, "topic": topic or None}
 
     # Hyphenated with "by-Speaker" but no leading date (e.g. Pursuit-of-Gods-Presence-by-Rev-David-Ravenhill)
-    by_parts = re.split(r'-by-', core, maxsplit=1, flags=re.IGNORECASE)
-    if len(by_parts) == 2:
-        topic_raw, speaker_raw = by_parts
+    last_by = core.lower().rfind('-by-')
+    if last_by >= 0:
+        topic_raw = core[:last_by]
+        speaker_raw = core[last_by + 4:]
+        # Strip trailing date suffixes like -2016-03-05_06
+        speaker_raw = re.sub(r'[-_]\d{4}[-_]\d{2}[-_]\d{2}.*$', '', speaker_raw)
         topic = _smart_title(topic_raw.replace('-', ' ').strip())
         speaker = normalize_speaker(speaker_raw.replace('-', ' ').strip())
         return {"speaker": speaker, "date": None, "topic": topic or None}
@@ -191,8 +207,8 @@ def extract_any_date(filename: str) -> str | None:
     if m:
         return m.group(0)
 
-    # Compact: YYYYMMDD
-    m = re.search(r'(20\d{2})(\d{2})(\d{2})', s)
+    # Compact: YYYYMMDD (with valid ranges)
+    m = re.search(r'\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b', s)
     if m:
         return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
 

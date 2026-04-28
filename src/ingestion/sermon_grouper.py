@@ -17,7 +17,10 @@ def _date_proximity(d1: str | None, d2: str | None, tolerance: int = 3) -> bool:
     if not d1 or not d2:
         return False
     fmt = "%Y-%m-%d"
-    return abs((datetime.strptime(d1, fmt) - datetime.strptime(d2, fmt)).days) <= tolerance
+    try:
+        return abs((datetime.strptime(d1, fmt) - datetime.strptime(d2, fmt)).days) <= tolerance
+    except ValueError:
+        return False
 
 
 def _jaccard(a: set, b: set) -> float:

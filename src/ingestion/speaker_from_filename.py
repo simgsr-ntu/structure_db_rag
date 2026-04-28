@@ -17,15 +17,20 @@ _ABBREVS = {
     "SPDanFoo":     "SP Daniel Foo",
     "SPDanielFoo":  "SP Daniel Foo",
     "DF":           "SP Daniel Foo",
+    "DanFoo":       "SP Daniel Foo",
+    "SP_Dan_Foo":   "SP Daniel Foo",
     # SP Chua Seng Lee  (PSL = Ps Seng Lee; pCSL = Ps Chua Seng Lee)
     "PSL":          "SP Chua Seng Lee",
     "pCSL":         "SP Chua Seng Lee",
     "CSL":          "SP Chua Seng Lee",
+    "ChuaSengLee":  "SP Chua Seng Lee",
     # Elders / Pastors
     "eLVM":         "Elder Lok Vi Ming",
     "eLKG":         "Ps Low Kok Guan",
     "eGHC":         "Elder Goh Hock Chye",
     "eHTL":         "Elder Ho Tuck Leh",
+    "eES":          "Ps Edric Sng",
+    "pES":          "Ps Edric Sng",
     # Others
     "JG":           "Jeffrey Goh",
 }

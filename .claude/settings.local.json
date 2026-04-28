@@ -28,7 +28,11 @@
       "Bash(pytest tests/ -v)",
       "Bash(sqlite3 *)",
       "Bash(curl -s http://localhost:11434/api/version)",
-      "Read(//Users/simgsr/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/subagent-driven-development/**)"
+      "Read(//Users/simgsr/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/subagent-driven-development/**)",
+      "Bash(.venv/bin/python *)",
+      "Bash(/Users/simgsr/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/start-server.sh *)",
+      "Bash(ollama list *)",
+      "Bash(ollama serve *)"
     ]
   }
 }

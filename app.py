@@ -61,6 +61,17 @@ try:
         "## Tool routing\n"
         "- Use 'sql_query_tool' for: counts, statistics, lists of speakers/years, date lookups, "
         "questions that need numbers (e.g. 'how many sermons', 'top 5 speakers').\n"
+        "  The database has two relevant tables:\n"
+        "    • sermons(sermon_id, speaker, date, year, bible_book, primary_verse, topic, status, ...)\n"
+        "    • sermon_intelligence(sermon_id, speaker, bible_book, primary_verse, verses_used, summary)\n"
+        "  For bible book / verse queries, JOIN or UNION both tables:\n"
+        "    SELECT COALESCE(s.bible_book, si.bible_book) as book, s.speaker, s.year\n"
+        "    FROM sermons s LEFT JOIN sermon_intelligence si ON s.sermon_id = si.sermon_id\n"
+        "  Always prefer COALESCE(s.bible_book, si.bible_book) to maximise coverage.\n"
+        "- For 'most recent', 'latest', or 'newest' sermon questions: use sql_query_tool with "
+        "'SELECT * FROM sermons WHERE date IS NOT NULL ORDER BY date DESC LIMIT 1' to identify "
+        "the sermon, then use search_sermons_tool with that filename or speaker to get the content. "
+        "Never ask the user for the current date — the database already contains all dates.\n"
         "- Use 'search_sermons_tool' for: questions about sermon *content*, topics, theology, "
         "what a pastor said, summaries of specific sermons. Pass 'year' or 'speaker' filters "
         "when the user specifies them.\n"
@@ -134,120 +145,179 @@ def respond(message, history):
 
 
 custom_css = """
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@700;800&display=swap');
 
-footer {visibility: hidden}
-body { background-color: #020617; }
+footer { visibility: hidden }
+
+* { box-sizing: border-box; }
+
+body {
+    background: #07101f !important;
+    background-image:
+        radial-gradient(ellipse at 15% 40%, rgba(37, 99, 235, 0.07) 0%, transparent 55%),
+        radial-gradient(ellipse at 85% 15%, rgba(124, 58, 237, 0.06) 0%, transparent 55%) !important;
+}
 
 .gradio-container {
-    background-color: #020617 !important;
-    color: #f8fafc;
-    font-family: 'Outfit', sans-serif !important;
-    max-width: 1400px !important;
+    background: transparent !important;
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif !important;
+    max-width: 1440px !important;
 }
 
-.sidebar {
-    background: rgba(30, 41, 59, 0.3) !important;
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    padding: 24px !important;
-    border-radius: 20px;
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.25); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.45); }
+
+/* Header */
+#title-container {
+    padding: 28px 0 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+#title-container img {
+    height: 42px;
+    opacity: 0.9;
+    filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.3));
+}
+#title-text h1 {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.9rem;
+    font-weight: 800;
+    margin: 0 0 2px 0;
+    background: linear-gradient(110deg, #93c5fd 0%, #a78bfa 55%, #f9a8d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+}
+#title-text p {
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    margin: 0;
 }
 
+/* Stats bar */
+.stats-bar {
+    display: flex;
+    gap: 0;
+    background: rgba(13, 20, 40, 0.9);
+    border: 1px solid rgba(99, 102, 241, 0.1);
+    border-radius: 10px;
+    padding: 10px 20px;
+    margin-bottom: 16px;
+    color: #64748b;
+    font-size: 0.82rem;
+    letter-spacing: 0.2px;
+    backdrop-filter: blur(20px);
+}
+
+/* Chat area */
 .chatbot-container {
-    border-radius: 24px !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    background: rgba(15, 23, 42, 0.6) !important;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border-radius: 14px !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    background: rgba(7, 16, 31, 0.92) !important;
+    box-shadow:
+        0 0 0 1px rgba(99, 102, 241, 0.04),
+        0 24px 60px -10px rgba(0, 0, 0, 0.7),
+        inset 0 1px 0 rgba(255, 255, 255, 0.03);
     overflow: hidden !important;
 }
 
+/* Messages */
 .message-user {
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
-    border-radius: 20px 20px 4px 20px !important;
-    padding: 14px 20px !important;
-    color: white !important;
-    font-weight: 500;
+    background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%) !important;
+    border-radius: 16px 16px 4px 16px !important;
+    padding: 11px 16px !important;
+    color: #bfdbfe !important;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    box-shadow: 0 2px 12px -3px rgba(37, 99, 235, 0.35);
 }
-
 .message-assistant {
-    background: #1e293b !important;
+    background: rgba(30, 41, 59, 0.6) !important;
     border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    border-radius: 20px 20px 20px 4px !important;
-    padding: 14px 20px !important;
+    border-radius: 4px 16px 16px 16px !important;
+    padding: 11px 16px !important;
+    font-size: 0.9rem;
+    line-height: 1.6;
 }
 
+/* Input row */
 .input-container {
-    background: rgba(30, 41, 59, 0.5) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    border-radius: 16px !important;
+    background: rgba(13, 20, 40, 0.85) !important;
+    border: 1px solid rgba(99, 102, 241, 0.16) !important;
+    border-radius: 12px !important;
     margin-top: 10px !important;
+    padding: 4px 4px 4px 6px !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    backdrop-filter: blur(10px);
+}
+.input-container:focus-within {
+    border-color: rgba(99, 102, 241, 0.42) !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.07);
 }
 
+/* Submit button */
 .btn-primary {
-    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%) !important;
+    background: linear-gradient(135deg, #1d4ed8 0%, #6d28d9 100%) !important;
     border: none !important;
-    color: white !important;
-    font-weight: 700 !important;
+    color: #e0e7ff !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 0.6px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-radius: 12px !important;
-    transition: all 0.3s ease;
+    border-radius: 9px !important;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 10px -2px rgba(37, 99, 235, 0.45);
 }
 .btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 10px 20px -5px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 6px 20px -4px rgba(37, 99, 235, 0.6);
+    filter: brightness(1.1);
+}
+.btn-primary:active {
+    transform: translateY(0);
+    filter: brightness(0.95);
 }
 
-#title-container {
-    margin-bottom: 40px;
-    text-align: left;
-    display: flex;
-    align-items: center;
-    gap: 25px;
-}
-#title-container img {
-    height: 70px;
-    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));
-}
-#title-text h1 {
-    font-size: 2.8rem;
-    font-weight: 800;
-    margin: 0;
-    background: linear-gradient(to right, #60a5fa, #a78bfa, #f472b6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    letter-spacing: -1px;
-}
-#title-text p {
-    color: #94a3b8;
-    font-size: 1.1rem;
-    font-weight: 400;
-    margin-top: 4px;
-}
-
-.stats-bar {
-    display: flex;
-    justify-content: space-between;
-    background: linear-gradient(to right, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.8));
-    border: 1px solid rgba(255, 255, 255, 0.05);
+/* Sidebar */
+.sidebar {
+    background: rgba(10, 16, 32, 0.75) !important;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    padding: 20px !important;
     border-radius: 14px;
-    padding: 12px 24px;
-    margin-bottom: 24px;
-    color: #cbd5e1;
-    font-size: 0.95rem;
 }
 
+/* Status badges */
 .status-badge {
-    padding: 4px 12px;
-    border-radius: 8px;
-    font-size: 0.7rem;
+    padding: 3px 9px;
+    border-radius: 5px;
+    font-size: 0.6rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1px;
 }
-.status-online { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2); }
-.status-offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+.status-online {
+    background: rgba(34, 197, 94, 0.1);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+.status-offline {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
 """
 
 with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
@@ -255,10 +325,10 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
         with gr.Column(scale=4):
             gr.HTML("""
                 <div id='title-container'>
-                    <img src='https://www.bbtc.com.sg/wp-content/uploads/2021/04/BBTC-Logo-Header.png' alt='Logo'>
+                    <img src='https://www.bbtc.com.sg/wp-content/uploads/2021/04/BBTC-Logo-Header.png' alt='BBTC Logo'>
                     <div id='title-text'>
                         <h1>Sermon Intelligence</h1>
-                        <p>Hybrid Agentic RAG Platform • Professional Edition</p>
+                        <p>Bethesda Bedok-Tampines Church &nbsp;·&nbsp; Agentic RAG</p>
                     </div>
                 </div>
             """)
@@ -279,7 +349,7 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
                     container=False,
                     scale=7,
                 )
-                submit = gr.Button("🚀 Execute", variant="primary", scale=1, elem_classes="btn-primary")
+                submit = gr.Button("Send", variant="primary", scale=1, elem_classes="btn-primary")
 
             gr.Examples(
                 examples=[
@@ -291,11 +361,11 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
                     ["What have our pastors said about faith during trials and suffering?"],
                 ],
                 inputs=msg,
-                label="💡 Strategic Inquiries"
+                label="Example questions"
             )
 
         with gr.Column(scale=1, elem_classes="sidebar"):
-            gr.Markdown("### 🛠️ System Health")
+            gr.Markdown("### System Health")
 
             vec_status = "online" if vector_store else "offline"
             ollama_status = "online" if (vector_store and vector_store._embeddings is not None) else "offline"
@@ -317,7 +387,7 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             """)
 
             gr.Markdown("---")
-            gr.Markdown("### 🎯 Capabilities")
+            gr.Markdown("### Capabilities")
             gr.Markdown(
                 "- **Semantic Search**: Retrieval of sermon content across a decade of archives.\n"
                 "- **SQL Analytics**: High-precision metadata querying for statistics and counts.\n"
@@ -326,7 +396,7 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             )
 
             gr.Markdown("---")
-            clear = gr.Button("🗑️ Reset Workspace", variant="secondary")
+            clear = gr.Button("Clear Chat", variant="secondary")
 
     def user_msg(user_message, history: list):
         if history is None:
@@ -364,8 +434,8 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
         history.append({"role": "assistant", "content": content})
         return history
 
-    disable_submit = lambda: gr.update(value="⏳ Processing...", interactive=False)
-    enable_submit = lambda: gr.update(value="🚀 Execute", interactive=True)
+    disable_submit = lambda: gr.update(value="Processing…", interactive=False)
+    enable_submit = lambda: gr.update(value="Send", interactive=True)
 
     msg.submit(user_msg, [msg, chatbot], [msg, chatbot], queue=True).then(
         disable_submit, None, submit

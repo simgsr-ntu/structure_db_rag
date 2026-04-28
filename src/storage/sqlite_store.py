@@ -48,9 +48,13 @@ class SermonRegistry:
                     primary_verse TEXT,
                     verses_used TEXT,
                     summary TEXT,
+                    bible_book TEXT,
                     FOREIGN KEY (sermon_id) REFERENCES sermons (sermon_id)
                 )
             """)
+            existing_intel_cols = [r[1] for r in conn.execute("PRAGMA table_info(sermon_intelligence)").fetchall()]
+            if "bible_book" not in existing_intel_cols:
+                conn.execute("ALTER TABLE sermon_intelligence ADD COLUMN bible_book TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_url ON sermons(url)")
 
     def is_new(self, url: str) -> bool:
@@ -59,10 +63,14 @@ class SermonRegistry:
             return cursor.fetchone() is None
 
     def insert_sermon(self, record: dict):
-        # Automatically normalize the speaker name before insertion
         if 'speaker' in record:
             record['speaker'] = normalize_speaker(record['speaker'])
-            
+        # Derive year from date when not explicitly provided
+        if not record.get('year') and record.get('date'):
+            try:
+                record['year'] = int(record['date'][:4])
+            except (ValueError, TypeError):
+                pass
         cols = ", ".join(record.keys())
         placeholders = ", ".join(["?"] * len(record))
         sql = f"INSERT OR REPLACE INTO sermons ({cols}) VALUES ({placeholders})"

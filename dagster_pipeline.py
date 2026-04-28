@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from dagster import asset, Definitions, ScheduleDefinition, AssetSelection, define_asset_job, AssetExecutionContext, MetadataValue
+from dagster import asset, Definitions, ScheduleDefinition, AssetSelection, define_asset_job, AssetExecutionContext, MetadataValue, in_process_executor
 from src.scraper.bbtc_scraper import BBTCScraper
 from src.storage.sqlite_store import SermonRegistry
 from src.storage.chroma_store import SermonVectorStore
@@ -84,6 +84,7 @@ def sermon_ingestion_summary(context: AssetExecutionContext):
     from src.ingestion.filename_parser import parse_cell_guide_filename
     from src.ingestion.sermon_grouper import group_sermon_files
     from src.ingestion.speaker_from_filename import speaker_from_filename
+    from src.ingestion.speaker_from_pdf import speaker_from_pdf
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     sermons = registry.get_all_sermons()
@@ -120,9 +121,13 @@ def sermon_ingestion_summary(context: AssetExecutionContext):
             cg_sermon = by_filename[group.cell_guide]
             sermon_id = cg_sermon['sermon_id']
 
-            # Metadata from filename (reliable — no LLM needed)
+            # Speaker: filename abbreviations (fast) → PDF "Speaker:" label → filename pattern (last resort)
             parsed = parse_cell_guide_filename(group.cell_guide)
-            speaker = parsed.get("speaker") or speaker_from_filename(group.cell_guide)
+            speaker = (
+                speaker_from_filename(group.cell_guide)
+                or speaker_from_pdf(os.path.join("data/staging", group.cell_guide))
+                or parsed.get("speaker")
+            )
             date    = parsed.get("date") or cg_sermon.get("date")
             topic   = parsed.get("topic")
 
@@ -159,18 +164,23 @@ def sermon_ingestion_summary(context: AssetExecutionContext):
                 # Mark slide as indexed (absorbed into the cell guide group)
                 registry.mark_processed(slide_sermon['url'], status="indexed")
 
-            # LLM intelligence (summary + verses) from combined text
+            # LLM intelligence (summary + verses + bible_book) from combined text
             combined = "\n\n".join(filter(None, [cg_text, *(
                 _load_text(by_filename[s]) for s in group.slides if s in by_filename
             )]))
             if combined:
                 intel = extractor.extract(combined[:2000])
+                # Back-fill bible_book into the main sermon record if missing
+                if intel.get("bible_book") and not update_record.get("bible_book"):
+                    update_record["bible_book"] = intel["bible_book"]
+                    registry.insert_sermon(update_record)
                 registry.insert_intelligence({
                     "sermon_id":     sermon_id,
                     "speaker":       speaker,
                     "primary_verse": intel.get("primary_verse"),
                     "verses_used":   intel.get("verses_used"),
                     "summary":       intel.get("summary"),
+                    "bible_book":    intel.get("bible_book"),
                 })
 
             processed_count += 1
@@ -188,15 +198,11 @@ def sermon_ingestion_summary(context: AssetExecutionContext):
 
                 context.log.info(f"📄 Standalone: {slide_filename}")
                 meta = extractor.extract(slide_text[:2000])
-                speaker = (
-                    speaker_from_filename(slide_filename)
-                    or meta.get("speaker")
-                )
                 update_record = {
                     "sermon_id":     sermon_id,
                     "filename":      slide_sermon['filename'],
                     "url":           slide_sermon['url'],
-                    "speaker":       speaker,
+                    "speaker":       None,
                     "date":          meta.get("date") or slide_sermon.get("date"),
                     "series":        meta.get("series"),
                     "bible_book":    meta.get("bible_book"),
@@ -207,10 +213,11 @@ def sermon_ingestion_summary(context: AssetExecutionContext):
                 _vectorise(sermon_id, slide_text, update_record)
                 registry.insert_intelligence({
                     "sermon_id":     sermon_id,
-                    "speaker":       speaker,
+                    "speaker":       None,
                     "primary_verse": meta.get("primary_verse"),
                     "verses_used":   meta.get("verses_used"),
                     "summary":       meta.get("summary"),
+                    "bible_book":    meta.get("bible_book"),
                 })
                 processed_count += 1
     
@@ -231,7 +238,11 @@ def sermon_ingestion_summary(context: AssetExecutionContext):
     }
 
 # Job definition
-ingestion_job = define_asset_job("sermon_ingestion_job", selection=AssetSelection.all())
+ingestion_job = define_asset_job(
+    "sermon_ingestion_job", 
+    selection=AssetSelection.all(),
+    executor_def=in_process_executor
+)
 
 # Weekly schedule (Sunday at midnight)
 sermon_weekly_schedule = ScheduleDefinition(
@@ -243,4 +254,5 @@ defs = Definitions(
     assets=[bible_ingestion, sermon_ingestion_summary],
     schedules=[sermon_weekly_schedule],
     jobs=[ingestion_job],
+    executor=in_process_executor,
 )

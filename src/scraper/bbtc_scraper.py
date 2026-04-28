@@ -78,7 +78,7 @@ class BBTCScraper:
         try:
             if ext == "pdf":
                 doc = fitz.open(file_path)
-                text = " ".join(page.get_text() for page in doc).strip()
+                text = " ".join(page.get_text("text", sort=True) for page in doc).strip()
                 quality = "text" if len(text) > 20 else "failed"
                 doc.close()
             elif ext in ("pptx", "ppt"):

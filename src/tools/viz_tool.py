@@ -78,24 +78,30 @@ def make_viz_tool(registry):
 
                 elif chart_name == "sermons_scatter":
                     rows = conn.execute(
-                        "SELECT year, speaker, COUNT(*) as n FROM sermons "
-                        "WHERE year IS NOT NULL AND speaker IS NOT NULL AND speaker != '' "
-                        "GROUP BY year, speaker ORDER BY year"
+                        "SELECT COALESCE(year, CAST(SUBSTR(date, 1, 4) AS INTEGER)) as yr, "
+                        "speaker, COUNT(*) as n FROM sermons "
+                        "WHERE (year IS NOT NULL OR date IS NOT NULL) "
+                        "AND speaker IS NOT NULL AND speaker != '' "
+                        "GROUP BY yr, speaker ORDER BY yr"
                     ).fetchall()
                     if not rows:
                         return "No sermon data found."
-                    
-                    years = [r[0] for r in rows]
+
+                    years = [str(r[0]) for r in rows]
                     speakers = [r[1] for r in rows]
                     counts = [r[2] for r in rows]
-                    
+
+                    all_years = sorted({str(r[0]) for r in rows})
+
                     fig = px.scatter(
                         x=years, y=speakers, size=counts, color=counts,
                         title="Sermon Count by Speaker and Year",
                         labels={'x': 'Year', 'y': 'Speaker', 'size': 'Count'},
-                        hover_name=speakers, size_max=40,
-                        color_continuous_scale='Plasma'
+                        hover_name=speakers, size_max=16,
+                        color_continuous_scale='Plasma',
+                        category_orders={'x': all_years},
                     )
+                    fig.update_xaxes(type='category', tickmode='array', tickvals=all_years, tickangle=-45)
 
                 else:
                     return (
@@ -104,15 +110,15 @@ def make_viz_tool(registry):
                         "top_bible_books, sermons_scatter."
                     )
 
-            # Update layout for a more premium look
+            left_margin = 180 if chart_name in ("sermons_per_speaker", "top_bible_books", "sermons_scatter") else 60
             fig.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 font_family="Inter, sans-serif",
-                title_font_size=20,
-                margin=dict(l=40, r=40, t=60, b=40),
+                title_font_size=18,
+                margin=dict(l=left_margin, r=40, t=60, b=40),
             )
-            
+
             file_path = os.path.join("/tmp", f"bbtc_chart_{uuid.uuid4().hex[:8]}.json")
             fig.write_json(file_path)
             return file_path

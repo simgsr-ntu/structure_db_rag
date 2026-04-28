@@ -10,16 +10,20 @@ class SermonVectorStore:
         self._client = chromadb.PersistentClient(path=persist_dir)
         self._embeddings = embeddings
         
-        # If no embeddings provided, try Ollama, otherwise use Chroma default
+        # If no embeddings provided, try Ollama, then fall back to local HuggingFace (same 768-dim)
         if self._embeddings is None:
             try:
                 from langchain_ollama import OllamaEmbeddings
                 self._embeddings = OllamaEmbeddings(model="nomic-embed-text")
-                # Quick test
                 self._embeddings.embed_query("test")
             except Exception:
-                print("⚠️  Ollama not available. Using ChromaDB default embeddings (local).")
-                self._embeddings = None # Chroma will use its default
+                print("⚠️  Ollama not available. Using local HuggingFace embeddings (all-mpnet-base-v2, 768-dim).")
+                from langchain_community.embeddings import HuggingFaceEmbeddings
+                self._embeddings = HuggingFaceEmbeddings(
+                    model_name="sentence-transformers/all-mpnet-base-v2",
+                    model_kwargs={"device": "cpu"},
+                    encode_kwargs={"normalize_embeddings": True},
+                )
         
         self._sermons = self._client.get_or_create_collection("sermon_collection")
         self._bible = self._client.get_or_create_collection("bible_collection")
@@ -33,7 +37,7 @@ class SermonVectorStore:
             return self._embeddings.embed_documents(safe_texts)
         return None # Let Chroma handle it
 
-    _MAX_BATCH = 1
+    _MAX_BATCH = 100
 
     def _upsert_in_batches(self, collection, chunks: list[str], metadatas: list[dict], ids: list[str]):
         for start in range(0, len(chunks), self._MAX_BATCH):
