@@ -20,6 +20,7 @@ from src.ingestion.ps_extractor import (
 from src.storage.sqlite_store import SermonRegistry
 from src.storage.chroma_store import SermonVectorStore
 from src.storage.normalize_speaker import normalize_speaker
+from src.storage.normalize_book import normalize_book
 from src.llm import get_llm
 
 STAGING_DIR = "data/staging"
@@ -122,8 +123,11 @@ def process_group(group, registry: SermonRegistry, vector_store: SermonVectorSto
         for ref in llm_verse_refs:
             m = re.match(r'^(\w+(?:\s\w+)?)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$', ref)
             if m:
+                canonical_book = normalize_book(m.group(1))
+                if canonical_book is None:
+                    continue
                 all_verses.append({
-                    "verse_ref": ref, "book": m.group(1),
+                    "verse_ref": ref, "book": canonical_book,
                     "chapter": int(m.group(2)),
                     "verse_start": int(m.group(3)) if m.group(3) else None,
                     "verse_end": int(m.group(4)) if m.group(4) else None,
