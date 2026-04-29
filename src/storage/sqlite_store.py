@@ -1,5 +1,7 @@
 import sqlite3, os
 from src.storage.normalize_speaker import normalize_speaker
+from src.storage.normalize_book import normalize_book
+from src.ingestion.ps_extractor import normalize_verse_ref
 
 
 class SermonRegistry:
@@ -60,6 +62,17 @@ class SermonRegistry:
             conn.execute(sql, list(record.values()))
 
     def insert_verse(self, record: dict):
+        record = dict(record)
+        canonical = normalize_book(record.get("book"))
+        if canonical is None:
+            return
+        record["book"] = canonical
+        record["verse_ref"] = normalize_verse_ref(
+            canonical,
+            record.get("chapter"),
+            record.get("verse_start"),
+            record.get("verse_end"),
+        )
         cols = ", ".join(record.keys())
         placeholders = ", ".join(["?"] * len(record))
         with sqlite3.connect(self.db_path) as conn:

@@ -148,3 +148,56 @@ def test_wipe_clears_both_tables(reg):
     with sqlite3.connect(reg.db_path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM verses").fetchone()[0]
     assert count == 0
+
+
+def _sermon(reg, sermon_id="s1"):
+    reg.upsert_sermon({
+        "sermon_id": sermon_id, "date": "2024-01-06", "year": 2024,
+        "language": "English", "speaker": None, "topic": None, "theme": None,
+        "summary": None, "key_verse": None, "ng_file": "f.pdf",
+        "ps_file": None, "status": "grouped",
+    })
+
+
+def test_insert_verse_normalizes_allcaps_book(reg):
+    _sermon(reg)
+    reg.insert_verse({
+        "sermon_id": "s1", "verse_ref": "HEBREWS 11:1",
+        "book": "HEBREWS", "chapter": 11, "verse_start": 1,
+        "verse_end": None, "is_key_verse": 1,
+    })
+    with sqlite3.connect(reg.db_path) as conn:
+        row = conn.execute(
+            "SELECT book, verse_ref FROM verses WHERE sermon_id = 's1'"
+        ).fetchone()
+    assert row[0] == "Hebrews"
+    assert row[1] == "Hebrews 11:1"
+
+
+def test_insert_verse_normalizes_abbreviation(reg):
+    _sermon(reg)
+    reg.insert_verse({
+        "sermon_id": "s1", "verse_ref": "Lk 9:23",
+        "book": "Lk", "chapter": 9, "verse_start": 23,
+        "verse_end": None, "is_key_verse": 1,
+    })
+    with sqlite3.connect(reg.db_path) as conn:
+        row = conn.execute(
+            "SELECT book, verse_ref FROM verses WHERE sermon_id = 's1'"
+        ).fetchone()
+    assert row[0] == "Luke"
+    assert row[1] == "Luke 9:23"
+
+
+def test_insert_verse_skips_garbage(reg):
+    _sermon(reg)
+    reg.insert_verse({
+        "sermon_id": "s1", "verse_ref": "Jericho 1:1",
+        "book": "Jericho", "chapter": 1, "verse_start": 1,
+        "verse_end": None, "is_key_verse": 0,
+    })
+    with sqlite3.connect(reg.db_path) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM verses WHERE sermon_id = 's1'"
+        ).fetchone()[0]
+    assert count == 0
