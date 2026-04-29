@@ -1,6 +1,6 @@
 import sqlite3, os
 from src.storage.normalize_speaker import normalize_speaker
-from src.storage.normalize_book import normalize_book
+from src.storage.normalize_book import normalize_book, disambiguate_book
 from src.ingestion.ps_extractor import normalize_verse_ref
 
 
@@ -64,6 +64,8 @@ class SermonRegistry:
     def insert_verse(self, record: dict):
         record = dict(record)
         canonical = normalize_book(record.get("book"))
+        if canonical is None:
+            canonical = disambiguate_book(record.get("book"), record.get("chapter"))
         if canonical is None:
             return
         record["book"] = canonical

@@ -11,33 +11,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.storage.normalize_book import normalize_book
-
-# Ambiguous unnumbered books that normalize_book() cannot resolve alone.
-# key → (book1, book2, max_ch_book1, max_ch_book2)
-# book1 is the default when the chapter is ambiguous.
-_AMBIGUOUS: dict[str, tuple] = {
-    "samuel":      ("1 Samuel",      "2 Samuel",      31, 24),
-    "kings":       ("1 Kings",       "2 Kings",       22, 25),
-    "chronicles":  ("1 Chronicles",  "2 Chronicles",  29, 36),
-    "corinthians": ("1 Corinthians", "2 Corinthians", 16, 13),
-    "timothy":     ("1 Timothy",     "2 Timothy",     6,  4),
-    "peter":       ("1 Peter",       "2 Peter",       5,  3),
-}
-
-
-def _disambiguate(key: str, chapter) -> str:
-    book1, book2, max1, max2 = _AMBIGUOUS[key]
-    if chapter is None:
-        return book1
-    ch = int(chapter)
-    if ch > max1 and ch > max2:
-        return book1   # invalid chapter — use default
-    if ch > max1:
-        return book2   # exceeds book1's max → must be book2
-    if ch > max2:
-        return book1   # exceeds book2's max → must be book1
-    return book1       # ambiguous overlap — default to book1
+from src.storage.normalize_book import normalize_book, disambiguate_book, BOOK_DISAMBIGUATION
 
 
 def _build_verse_ref(book: str, chapter, verse_start, verse_end) -> str:
@@ -76,8 +50,8 @@ def main():
         canonical = normalize_book(raw)
         if canonical is None:
             key = raw.strip().lower() if raw else ""
-            if key in _AMBIGUOUS:
-                canonical = _disambiguate(key, chapter)
+            if key in BOOK_DISAMBIGUATION:
+                canonical = disambiguate_book(key, chapter)
             else:
                 garbage.add(row["id"])
                 truly_unresolved.append(raw or "(null)")

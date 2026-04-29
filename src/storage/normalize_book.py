@@ -85,3 +85,38 @@ def normalize_book(raw: str) -> str | None:
     if key in _GARBAGE:
         return None
     return BOOK_MAP.get(key)
+
+
+# Ambiguous unnumbered books that normalize_book() cannot resolve alone.
+# key → (book1, book2, max_ch_book1, max_ch_book2). book1 is the default.
+BOOK_DISAMBIGUATION: dict[str, tuple] = {
+    "samuel":      ("1 Samuel",      "2 Samuel",      31, 24),
+    "kings":       ("1 Kings",       "2 Kings",       22, 25),
+    "chronicles":  ("1 Chronicles",  "2 Chronicles",  29, 36),
+    "corinthians": ("1 Corinthians", "2 Corinthians", 16, 13),
+    "timothy":     ("1 Timothy",     "2 Timothy",     6,  4),
+    "peter":       ("1 Peter",       "2 Peter",       5,  3),
+}
+
+
+def disambiguate_book(raw: str, chapter) -> str | None:
+    """Resolve an ambiguous unnumbered book name using chapter number.
+
+    Returns the canonical book name, or None if raw is not a known ambiguous key.
+    """
+    if not raw:
+        return None
+    key = raw.strip().lower()
+    if key not in BOOK_DISAMBIGUATION:
+        return None
+    book1, book2, max1, max2 = BOOK_DISAMBIGUATION[key]
+    if chapter is None:
+        return book1
+    ch = int(chapter)
+    if ch > max1 and ch > max2:
+        return book1   # invalid chapter — use default
+    if ch > max1:
+        return book2   # exceeds book1's max → must be book2
+    if ch > max2:
+        return book1   # exceeds book2's max → must be book1
+    return book1       # ambiguous overlap — default to book1
