@@ -204,7 +204,7 @@ def run_pipeline(wipe: bool = False, year: int | None = None, incremental: bool 
 
     registry = SermonRegistry(db_path=DB_PATH)
     vector_store = SermonVectorStore(persist_dir=CHROMA_DIR)
-    llm = get_llm(ollama_model="llama3.1:8b")
+    llm = get_llm()
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
 
     if wipe:

@@ -10,7 +10,7 @@ from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats
 from src.storage.sqlite_store import SermonRegistry
 from src.tools.sql_tool import make_sql_tool
 from src.tools.vector_tool import make_vector_tool
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from src.tools.viz_tool import make_viz_tool
 from src.tools.bible_tool import make_bible_tool
 import plotly.io as pio
@@ -175,14 +175,48 @@ def _inference_badge_html(provider: str) -> str:
     )
 
 
+_TOOL_LABELS = {
+    "sql_query_tool": "SQL",
+    "search_sermons_tool": "Vector Search",
+    "viz_tool": "Visualization",
+    "get_bible_versions_tool": "Bible Versions",
+    "search_bible_tool": "Bible Search",
+}
+
+
+def _build_meta_footer(tools_used: list, token_info: dict) -> str:
+    left = ""
+    if tools_used:
+        labels = [_TOOL_LABELS.get(t, t) for t in tools_used]
+        left = "🔧 " + " · ".join(labels)
+
+    right = ""
+    total = token_info.get("total") or (token_info.get("input", 0) + token_info.get("output", 0))
+    if total:
+        right = f"📊 {total:,} tokens"
+
+    if not left and not right:
+        return ""
+
+    return (
+        "<div style='margin-top:10px;padding-top:8px;"
+        "border-top:1px solid rgba(255,255,255,0.06);"
+        "display:flex;justify-content:space-between;align-items:center;"
+        "font-size:0.68rem;font-family:monospace;color:#475569;letter-spacing:0.4px;'>"
+        f"<span>{left}</span>"
+        f"<span>{right}</span>"
+        "</div>"
+    )
+
+
 def respond(message, history, provider="ollama"):
     if not _init_ok or get_agent is None:
-        return "⚠️ Agent not initialized. Check that Ollama is running."
+        return "⚠️ Agent not initialized. Check that Ollama is running.", [], {}
 
     try:
         agent = get_agent(provider)
     except Exception as e:
-        return f"⚠️ Could not load {provider} agent: {e}"
+        return f"⚠️ Could not load {provider} agent: {e}", [], {}
 
     truncated_history = history[-2:] if len(history) > 2 else history
     messages = []
@@ -200,7 +234,8 @@ def respond(message, history, provider="ollama"):
 
     try:
         result = agent.invoke({"messages": messages})
-        final = result["messages"][-1].content
+        final_msg = result["messages"][-1]
+        final = final_msg.content
         if not isinstance(final, str):
             final = str(final)
 
@@ -213,9 +248,32 @@ def respond(message, history, provider="ollama"):
                     final = final.rstrip() + "\n" + match.group(0)
                     break
 
-        return final
+        # Extract tool names from ToolMessages
+        tools_used = []
+        for msg in result["messages"]:
+            if isinstance(msg, ToolMessage) and getattr(msg, "name", None) and msg.name not in tools_used:
+                tools_used.append(msg.name)
+
+        # Extract token counts (LangChain usage_metadata takes priority)
+        token_info: dict = {}
+        usage = getattr(final_msg, "usage_metadata", None)
+        if usage:
+            token_info = {
+                "input": usage.get("input_tokens", 0),
+                "output": usage.get("output_tokens", 0),
+                "total": usage.get("total_tokens", 0),
+            }
+        else:
+            meta = getattr(final_msg, "response_metadata", {}) or {}
+            raw = meta.get("token_usage") or meta.get("usage") or {}
+            if raw:
+                inp = raw.get("prompt_tokens") or raw.get("input_tokens") or raw.get("prompt_eval_count", 0)
+                out = raw.get("completion_tokens") or raw.get("output_tokens") or raw.get("eval_count", 0)
+                token_info = {"input": inp, "output": out, "total": raw.get("total_tokens") or (inp + out)}
+
+        return final, tools_used, token_info
     except Exception as e:
-        return f"⚠️ An error occurred while processing your request: {e}"
+        return f"⚠️ An error occurred while processing your request: {e}", [], {}
 
 
 custom_css = """
@@ -568,14 +626,15 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
 
         user_message = history[-1]["content"]
         chat_history = history[:-1]
-        bot_message = respond(user_message, chat_history, provider)
+        bot_message, tools_used, token_info = respond(user_message, chat_history, provider)
 
         text, chart_path = extract_chart_path(bot_message)
-        
+        meta_footer = _build_meta_footer(tools_used, token_info)
+
         content = []
         if text:
-            content.append({"type": "text", "text": text})
-            
+            content.append({"type": "text", "text": text + meta_footer})
+
         if chart_path:
             if chart_path.endswith('.json'):
                 try:

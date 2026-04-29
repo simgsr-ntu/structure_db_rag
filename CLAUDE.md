@@ -19,8 +19,8 @@ cp .env.example .env  # optional: GROQ_API_KEY, GEMINI_API_KEY for cloud fallbac
 Ollama must be running locally: `ollama serve`
 
 Required Ollama models:
-- `BGE-M3` — embeddings (primary)
-- `llama3.1:8b` — metadata extraction + summary generation
+- `BGE-M3` — embeddings (primary; used by ChromaDB at runtime and during ingest)
+- `gemma4:latest` — LLM for chat agent, metadata extraction, and summary generation
 
 ## Running the Application
 
@@ -75,7 +75,7 @@ ingest.py
   ├── GROUP     (sermon_grouper.py)   → SermonGroup(ng, ps[])
   ├── EXTRACT   (ng_extractor.py)     → TOPIC/SPEAKER/THEME/DATE via regex
   │             (ps_extractor.py)     → verses from filename + LLM on text
-  ├── SUMMARIZE (llama3.1:8b)         → unified NG+PS summary
+  ├── SUMMARIZE (gemma4:latest)        → unified NG+PS summary
   └── EMBED     (chroma_store.py)     → BGE-M3 → sermon_collection
     ↓
 SQLite (data/sermons.db)  ← structured metadata + verses table
