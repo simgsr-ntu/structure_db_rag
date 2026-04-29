@@ -5,6 +5,10 @@ __pycache__/
 .env
 data/
 .tmp_dagster_home_*/
+.dagster_home/
+.superpowers/
+.DS_Store
+.pytest_cache/
 *.png
 app_log.txt
 pipeline_error*.txt
