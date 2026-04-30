@@ -1,19 +1,39 @@
 # BBTC Sermon Intelligence
 
-A **Hybrid Agentic RAG pipeline** for the Bethesda Bedok-Tampines Church (BBTC) sermon archive. Combines structured SQL metadata querying with semantic vector search, backed by a LangGraph ReAct agent that intelligently routes each question to the right data source.
+> **Capstone Project — NTU MSCS 2026**
+> A production-grade Hybrid Agentic RAG pipeline over a decade of church sermon archives.
 
-Built as a capstone project demonstrating end-to-end ML engineering: web scraping, document classification, LLM-powered metadata extraction, dual-layer storage, agent orchestration, and a production-ready chat interface.
+A fully local, privacy-preserving AI system that ingests, indexes, and answers natural-language questions about the BBTC (Bethesda Bedok-Tampines Church) sermon archive from 2015 to present. Built end-to-end: from PDF scraping through LLM-powered metadata extraction, dual-layer storage, and a ReAct agent that intelligently routes queries between SQL, vector search, visualisation, and Bible lookup tools.
 
 ---
 
-## Features
+## What it does
 
-- **Agentic RAG** — LangGraph ReAct agent dynamically routes queries between SQL, vector search, visualisation, and Bible lookup tools
-- **Hybrid storage** — SQLite for structured metadata (speaker, date, topic, verse) + ChromaDB for semantic content search
-- **CrossEncoder reranking** — improves retrieval quality by reranking top-20 candidates before returning results
-- **Bible archive** — 5 translations (KJV, ASV, YLT, NIV, ESV) indexed for verse lookup and semantic search
-- **Dynamic visualisations** — interactive Plotly charts generated on demand from live SQLite data
-- **Automated ingestion** — Dagster pipeline scrapes and indexes new sermons on a weekly schedule
+Ask questions like:
+
+- *"How many sermons has Pastor Daniel preached on Romans?"*
+- *"What did the church teach about anxiety in 2023?"*
+- *"Show me a breakdown of sermons by speaker over the last 3 years."*
+- *"Compare how NIV and ESV translate John 3:16."*
+- *"Find Bible passages about perseverance in suffering."*
+
+The LangGraph ReAct agent decides in real time which tool to invoke — SQL for structured facts, ChromaDB for semantic content, Plotly for charts, or the Bible archive for cross-translation verse lookup — then synthesises a coherent answer.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **LLM** | Gemma 4 (via Ollama, fully local) |
+| **Embeddings** | BGE-M3 (1.2 GB, multilingual, via Ollama) |
+| **Reranking** | CrossEncoder (`ms-marco-MiniLM-L-6-v2`) |
+| **Vector store** | ChromaDB |
+| **Structured store** | SQLite |
+| **Agent framework** | LangGraph ReAct (`langgraph.prebuilt`) |
+| **Pipeline scheduler** | Dagster (weekly cron) |
+| **Chat UI** | Gradio |
+| **Scraper** | HTTPX + BeautifulSoup (Cloudflare-bypass) |
 
 ---
 
@@ -29,7 +49,7 @@ ingest.py
   ├── GROUP     (sermon_grouper.py)   → SermonGroup(ng, ps[])
   ├── EXTRACT   (ng_extractor.py)     → TOPIC/SPEAKER/THEME/DATE via regex
   │             (ps_extractor.py)     → key verse from PS filename
-  ├── SUMMARIZE (llama3.1:8b)         → unified NG+PS summary
+  ├── SUMMARIZE (gemma4:latest)       → unified NG+PS summary
   └── EMBED     (chroma_store.py)     → BGE-M3 → sermon_collection
     ↓
 SQLite (data/sermons.db)              ← structured metadata + verses
@@ -37,8 +57,26 @@ ChromaDB (data/chroma_db/)            ← body chunks + summaries + bible verses
     ↓
 LangGraph ReAct Agent (5 tools)
     ↓
-Gradio Chat UI
+Gradio Chat UI  →  http://localhost:7860
 ```
+
+### Sermon Unit Model
+
+Each Sunday, BBTC posts two files that form one **sermon unit**:
+- **NG** (Notes/Guide): PDF with labeled `TOPIC`, `SPEAKER`, `THEME`, `DATE` fields + body text
+- **PS** (Slides/PPT): PDF whose filename encodes the key verse
+
+The pipeline pairs these by date proximity and topic overlap before ingestion.
+
+### Agent Tools
+
+| Tool | When the agent uses it |
+|---|---|
+| `sql_query_tool` | Counts, lists, date ranges, speaker stats, verse aggregations |
+| `search_sermons_tool` | "What did the church teach about X?" — semantic content search |
+| `viz_tool` | "Show me a chart of…" — live Plotly charts from SQLite |
+| `get_bible_versions_tool` | "How do different translations render Luke 9:23?" |
+| `search_bible_tool` | "Find passages about perseverance" — semantic Bible search |
 
 ### Key Components
 
@@ -58,16 +96,6 @@ Gradio Chat UI
 | `dagster_pipeline.py` | root | Weekly Saturday schedule wrapping `ingest.py` |
 | `app.py` | root | Gradio UI + LangGraph ReAct agent |
 
-### Agent Tools
-
-| Tool | Purpose |
-|---|---|
-| `sql_query_tool` | SQL against `data/sermons.db`; counts, stats, verse aggregations |
-| `search_sermons_tool` | BGE-M3 semantic search over `sermon_collection` |
-| `viz_tool` | Interactive Plotly charts: `sermons_per_speaker`, `sermons_per_year`, `verses_per_book`, `sermons_scatter` |
-| `get_bible_versions_tool` | Returns all stored translations of a specific verse reference |
-| `search_bible_tool` | Semantic search over `bible_collection` for topic-based passage lookup |
-
 ---
 
 ## Local Setup
@@ -75,11 +103,11 @@ Gradio Chat UI
 ### Prerequisites
 
 - Python 3.11+
-- [Ollama](https://ollama.ai) running locally with the following models:
+- [Ollama](https://ollama.ai) running locally
 
 ```bash
-ollama pull bge-m3          # embeddings (1.2 GB, multilingual)
-ollama pull llama3.1:8b     # metadata extraction + summary generation
+ollama pull bge-m3           # embeddings — 1.2 GB, multilingual
+ollama pull gemma4:latest    # LLM — metadata extraction, summarisation, chat
 ```
 
 ### Install and run
@@ -89,36 +117,36 @@ git clone <repo-url>
 cd structure_db_rag
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # optional: add GROQ_API_KEY for cloud inference
+cp .env.example .env         # optional: add GROQ_API_KEY for cloud inference fallback
 
-# Run the Gradio UI (starts Ollama automatically if not running)
+# Scrape sermons from the BBTC website (one year at a time)
+python src/scraper/bbtc_scraper.py 2024
+
+# Full ingest from scratch
+python ingest.py --wipe
+
+# Launch the Gradio chat UI
 python app.py
 ```
 
 Open [http://localhost:7860](http://localhost:7860).
 
-### Bible archive setup
+### Bible archive (optional)
 
-The bible archive supports 5 translations. KJV, ASV, and YLT are downloaded automatically from Scrollmapper (public domain). NIV and ESV require EPUB files that you must supply yourself (copyrighted — not included in this repo).
-
-Place your owned copies here before running the bible ingest:
+KJV, ASV, and YLT are downloaded automatically from Scrollmapper (public domain). NIV and ESV require EPUB files you supply yourself (copyrighted — not included in this repo).
 
 ```
 data/bibles/NIV.epub
 data/bibles/ESV The Holy Bible.epub
 ```
 
-Then ingest:
-
 ```bash
 # All 5 translations (NIV/ESV skipped automatically if files are absent)
 python -m src.ingestion.bible.bible_ingest
 
-# Public-domain only (no EPUB files needed)
+# Public-domain only
 python -m src.ingestion.bible.bible_ingest --versions KJV ASV YLT
 ```
-
-The `get_bible_versions_tool` in the chat UI will only return translations that have been ingested.
 
 ---
 
@@ -137,7 +165,7 @@ python ingest.py --year 2024
 # Scrape a single year from the BBTC website
 python src/scraper/bbtc_scraper.py 2024
 
-# Dagster web UI (weekly scheduler)
+# Dagster web UI — weekly Saturday scheduler
 DAGSTER_HOME=$(mktemp -d) dagster dev -m dagster_pipeline
 ```
 
@@ -175,13 +203,13 @@ verses(
 )
 
 bible_books(
-  book_name  TEXT PRIMARY KEY,  -- canonical name (e.g. "1 Samuel")
+  book_name  TEXT PRIMARY KEY,  -- canonical name e.g. "1 Samuel"
   testament  TEXT,              -- "OT" | "NT"
   book_order INTEGER            -- 1–66
 )
 
 book_aliases(
-  alias     TEXT PRIMARY KEY,   -- lowercase variant (e.g. "1sam", "gen")
+  alias     TEXT PRIMARY KEY,   -- lowercase variant e.g. "1sam", "gen"
   canonical TEXT                -- FK → bible_books
 )
 
@@ -208,13 +236,13 @@ bible_versions(
 
 ---
 
-## Running Tests
+## Tests
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-103 tests covering: file classification, filename parsing, metadata extraction, verse normalization, sermon grouping, vector retrieval, UI helpers, and SQLite storage.
+103 tests covering file classification, filename parsing, metadata extraction, verse normalization, sermon grouping, vector retrieval, UI helpers, and SQLite storage.
 
 ---
 
@@ -232,43 +260,40 @@ python -m pytest tests/ -v
 │   │   ├── bible/
 │   │   │   ├── bible_ingest.py   # Bible translation ingestion
 │   │   │   └── epub_parser.py    # EPUB verse extractor
-│   │   ├── file_classifier.py
-│   │   ├── filename_parser.py
-│   │   ├── ng_extractor.py
-│   │   ├── ps_extractor.py
-│   │   └── sermon_grouper.py
+│   │   ├── file_classifier.py    # ng | ps | handout classifier
+│   │   ├── filename_parser.py    # Fallback metadata from filename
+│   │   ├── ng_extractor.py       # Regex metadata from NG PDFs
+│   │   ├── ps_extractor.py       # Verse extraction from PS filenames
+│   │   └── sermon_grouper.py     # Pairs NG+PS by date/topic
 │   ├── scraper/
-│   │   └── bbtc_scraper.py
+│   │   └── bbtc_scraper.py       # Cloudflare-bypass scraper
 │   ├── storage/
-│   │   ├── chroma_store.py
-│   │   ├── normalize_book.py
-│   │   ├── normalize_speaker.py
-│   │   ├── reranker.py
-│   │   └── sqlite_store.py
+│   │   ├── chroma_store.py       # ChromaDB + BGE-M3 + reranker
+│   │   ├── normalize_book.py     # Canonical 66-book name normalization
+│   │   ├── normalize_speaker.py  # Speaker name normalization
+│   │   ├── reranker.py           # CrossEncoder reranking
+│   │   └── sqlite_store.py       # SQLite CRUD
 │   ├── tools/
-│   │   ├── bible_tool.py
-│   │   ├── sql_tool.py
-│   │   ├── vector_tool.py
-│   │   └── viz_tool.py
-│   ├── llm.py
-│   └── ui_helpers.py
+│   │   ├── bible_tool.py         # Bible verse + search tools
+│   │   ├── sql_tool.py           # SQL query tool
+│   │   ├── vector_tool.py        # Sermon semantic search tool
+│   │   └── viz_tool.py           # Plotly chart tool
+│   ├── llm.py                    # Unified LLM client (Ollama / Groq / Gemini)
+│   └── ui_helpers.py             # Gradio rendering helpers
 ├── tests/                        # 103 unit tests
 ├── scripts/
 │   └── normalize_books.py        # One-time book-name migration utility
 └── docs/
-    ├── design/                   # Architecture and feature design specs
+    ├── design/                   # Architecture and feature design notes
     └── plans/                    # Implementation plans
 ```
 
 ---
 
-## Deployment
+## Notable Design Decisions
 
-The Gradio interface runs on port `7860`. To run with Docker:
-
-```bash
-docker build -t sermon-intelligence .
-docker run -p 7860:7860 -v $(pwd)/data:/app/data sermon-intelligence
-```
-
-Mount `data/` to a persistent volume to preserve the SQLite database and ChromaDB vector store across restarts.
+- **Classify-before-download**: The scraper classifies filenames against a regex before downloading, so handout PDFs are never fetched.
+- **~50% image-based PDFs**: Many PS slide files have no extractable text — verse extraction relies entirely on filename regex parsing.
+- **Fully local by default**: Ollama handles both embeddings and LLM inference. Groq/Gemini are optional cloud fallbacks configured via `.env`.
+- **NG labeled fields are reliable from 2022+**: Pre-2022 files fall back to `filename_parser.py` heuristics.
+- **CrossEncoder reranking**: Top-20 BGE-M3 candidates are reranked by a cross-encoder before returning to the agent, improving precision without sacrificing recall.

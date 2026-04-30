@@ -1,15 +1,45 @@
-.worktrees/
-.venv/
+# --- Python ---
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# --- Virtual environment ---
+.venv/
+venv/
+env/
+
+# --- Environment & secrets ---
 .env
+.env.*
+!.env.example
+
+# --- Runtime data (never commit) ---
 data/
-.tmp_dagster_home_*/
 .dagster_home/
+.tmp_dagster_home_*/
+
+# --- Editor / tool config (local only) ---
+.claude/
 .superpowers/
+.worktrees/
 .DS_Store
+.idea/
+.vscode/
+
+# --- Test / build artifacts ---
 .pytest_cache/
+.coverage
+htmlcov/
 *.png
+
+# --- Logs & temp files ---
 app_log.txt
 pipeline_error*.txt
 resources.html
+*.log
+
