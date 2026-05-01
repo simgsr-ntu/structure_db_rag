@@ -12,7 +12,11 @@ def _ensure_ollama(timeout: int = 20) -> bool:
         return True
     except Exception:
         print("🦙 Ollama not running — starting it now...")
-        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            print("❌ Ollama is not installed! Please install it from https://ollama.com")
+            return False
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -37,10 +41,18 @@ class SermonVectorStore:
                 self._embeddings = OllamaEmbeddings(model="BGE-M3")
                 self._embeddings.embed_query("test")
             except Exception as e:
-                raise RuntimeError(
-                    f"BGE-M3 embeddings unavailable ({str(e)}). "
-                    "Start Ollama and run: ollama pull bge-m3"
-                )
+                # If model is missing, try to auto-pull it
+                print(f"🦙 Model BGE-M3 not found or ready. Attempting to pull it automatically... ({str(e)})")
+                try:
+                    subprocess.run(["ollama", "pull", "bge-m3"], check=True)
+                    self._embeddings.embed_query("test")
+                    print("🦙 BGE-M3 model successfully pulled and ready.")
+                except Exception as pull_err:
+                    raise RuntimeError(
+                        f"BGE-M3 embeddings unavailable. "
+                        f"Auto-pull failed ({str(pull_err)}). "
+                        "Start Ollama and run: ollama pull bge-m3"
+                    )
         
         self._sermons = self._client.get_or_create_collection("sermon_collection")
         self._bible = self._client.get_or_create_collection("bible_collection")

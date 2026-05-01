@@ -64,6 +64,12 @@ def extract_ng_metadata(text: str, filename: str) -> dict:
         speaker = speaker or parsed.get("speaker")
         date = date or parsed.get("date")
 
+    # Final fallback for year from prefix
+    if not date:
+        m = re.match(r'^(?:English|Mandarin)_(\d{4})_', filename)
+        if m:
+            date = f"{m.group(1)}-01-01"
+
     return {"speaker": speaker, "date": date, "topic": topic, "theme": theme}
 
 

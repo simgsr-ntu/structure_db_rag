@@ -78,7 +78,7 @@ def _parse_leading_date(s: str) -> tuple[str | None, str]:
         r'[-_]?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may'
         r'|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?'
         r'|nov(?:ember)?|dec(?:ember)?)[a-z]*'
-        r'[-_]?(\d{2,4})?[-_]?',
+        r'[-_]?(20\d{2})?[-_]?',
         s.lower(),
     )
     if not m:
