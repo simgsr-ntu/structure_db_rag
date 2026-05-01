@@ -64,6 +64,11 @@ def extract_ng_metadata(text: str, filename: str) -> dict:
         speaker = speaker or parsed.get("speaker")
         date = date or parsed.get("date")
 
+    # Second fallback: scan filename for any date string if missing
+    if not date:
+        from src.ingestion.filename_parser import extract_any_date
+        date = extract_any_date(filename)
+
     # Final fallback for year from prefix
     if not date:
         m = re.match(r'^(?:English|Mandarin)_(\d{4})_', filename)
