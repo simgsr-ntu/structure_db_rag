@@ -1,7 +1,28 @@
 # src/storage/chroma_store.py
 import chromadb
 import os
+import subprocess
+import time
 from src.storage.reranker import Reranker
+
+def _ensure_ollama(timeout: int = 20) -> bool:
+    try:
+        import requests
+        requests.get("http://127.0.0.1:11434/", timeout=1)
+        return True
+    except Exception:
+        print("🦙 Ollama not running — starting it now...")
+        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                requests.get("http://127.0.0.1:11434/", timeout=1)
+                print("🦙 Ollama is ready.")
+                return True
+            except Exception:
+                time.sleep(1)
+        print("⚠️  Ollama did not start within the timeout.")
+        return False
 
 class SermonVectorStore:
     def __init__(self, persist_dir: str = "data/chroma_db", embeddings=None):
@@ -10,13 +31,14 @@ class SermonVectorStore:
         if embeddings is not None:
             self._embeddings = embeddings
         else:
+            _ensure_ollama()
             try:
                 from langchain_ollama import OllamaEmbeddings
                 self._embeddings = OllamaEmbeddings(model="BGE-M3")
                 self._embeddings.embed_query("test")
-            except Exception:
+            except Exception as e:
                 raise RuntimeError(
-                    "BGE-M3 embeddings unavailable. "
+                    f"BGE-M3 embeddings unavailable ({str(e)}). "
                     "Start Ollama and run: ollama pull bge-m3"
                 )
         
