@@ -10,18 +10,28 @@ from datetime import datetime
 from dagster import (
     asset, Definitions, ScheduleDefinition, AssetSelection,
     define_asset_job, AssetExecutionContext, MetadataValue, in_process_executor,
+    Config,
 )
 from ingest import run_pipeline
 from src.scraper.bbtc_scraper import BBTCScraper
 
 
+class ScraperConfig(Config):
+    year: int | None = None
+
+
 @asset
-def sermon_scraping(context: AssetExecutionContext):
+def sermon_scraping(context: AssetExecutionContext, config: ScraperConfig):
     """Scrape the BBTC website for new sermons."""
-    current_year = datetime.now().year
     scraper = BBTCScraper()
     
-    for year in range(2015, current_year + 1):
+    if config.year:
+        years = [config.year]
+    else:
+        current_year = datetime.now().year
+        years = range(2015, current_year + 1)
+        
+    for year in years:
         context.log.info(f"Starting scraper for year {year}...")
         scraper.scrape_year(year)
         
@@ -51,7 +61,7 @@ def bible_ingestion(context: AssetExecutionContext):
     return MetadataValue.text("done")
 
 ingestion_job = define_asset_job(
-    "sermon_ingestion_job",
+    "full_ingestion_job",
     selection=AssetSelection.all(),
     executor_def=in_process_executor,
 )

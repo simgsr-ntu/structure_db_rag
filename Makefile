@@ -7,7 +7,9 @@ PIP = $(VENV_DIR)/bin/pip
 YEAR ?= $(shell date +%Y)
 
 # Setup entire project (one-click install)
-setup: install scrape ingest
+setup: install
+	@echo "🧠 Running full initial ingestion via Dagster..."
+	DAGSTER_HOME=$$(mktemp -d) $(VENV_DIR)/bin/dagster job execute -m dagster_pipeline -j full_ingestion_job
 	@echo "✅ Setup complete! You can now run the app with 'make run'"
 
 # Install dependencies and setup environment
@@ -22,15 +24,16 @@ install:
 	fi
 	@echo "✅ Install complete."
 
-# Scrape the sermons for the current year (or specify YEAR=2024 make scrape)
+# Scrape sermons via Dagster (defaults to current year, use YEAR=2024 for specific)
 scrape:
-	@echo "📥 Scraping sermons for year $(YEAR)..."
-	$(PYTHON) src/scraper/bbtc_scraper.py $(YEAR)
+	@echo "📥 Scraping sermons for year $(YEAR) via Dagster..."
+	DAGSTER_HOME=$$(mktemp -d) $(VENV_DIR)/bin/dagster asset materialize --select sermon_scraping -m dagster_pipeline \
+		--config-json '{"ops": {"sermon_scraping": {"config": {"year": $(YEAR)}}}}'
 
-# Ingest sermons into SQLite and ChromaDB
+# Ingest sermons into SQLite and ChromaDB via Dagster
 ingest:
-	@echo "🧠 Ingesting sermons into database..."
-	$(PYTHON) ingest.py --wipe
+	@echo "🧠 Ingesting sermons via Dagster..."
+	DAGSTER_HOME=$$(mktemp -d) $(VENV_DIR)/bin/dagster asset materialize --select sermon_ingestion -m dagster_pipeline
 
 # Run the Gradio Chat UI
 run:
