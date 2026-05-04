@@ -554,6 +554,7 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             gr.Examples(
                 examples=[
                     ["Scripture Coverage: Generate a frequency heatmap of the most frequently preached Bible books."],
+                    ["Identify the consistent theological themes in BBTC’s vision statements and pulpit series between 2015 and 2026"],
                     ["Gap Analysis: List all Bible books that have never been preached in BBTC sermons."],
                     ["Semantic Analysis: Identify shifts in ministry emphasis within BBTC over the last 5 years."],
                     ["BBTC Theology: Explain the biblical sequence of End Times events based on BBTC teachings."],
