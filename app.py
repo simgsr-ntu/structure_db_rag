@@ -166,6 +166,10 @@ def _inference_badge_html(provider: str) -> str:
         has_key = bool(os.getenv("GROQ_API_KEY"))
         status = "online" if has_key else "offline"
         label = f"groq · {GROQ_MODEL}" if has_key else "groq · no key"
+    elif provider == "gemini":
+        has_key = bool(os.getenv("GOOGLE_API_KEY"))
+        status = "online" if has_key else "offline"
+        label = "gemini · 2.5 pro" if has_key else "gemini · no key"
     else:
         status = _ollama_status
         label = "ollama · local"
@@ -589,7 +593,7 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             gr.Markdown("---")
             gr.Markdown("### Inference Engine")
             provider_radio = gr.Radio(
-                choices=["Ollama (local)", "Groq (cloud)"],
+                choices=["Ollama (local)", "Groq (cloud)", "Gemini (cloud)"],
                 value="Ollama (local)",
                 show_label=False,
                 interactive=True,
@@ -609,7 +613,12 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             clear = gr.Button("Clear Chat", variant="secondary")
 
     def _on_provider_change(radio_val):
-        provider = "groq" if "Groq" in radio_val else "ollama"
+        if "Groq" in radio_val:
+            provider = "groq"
+        elif "Gemini" in radio_val:
+            provider = "gemini"
+        else:
+            provider = "ollama"
         return provider, _inference_badge_html(provider)
 
     provider_radio.change(

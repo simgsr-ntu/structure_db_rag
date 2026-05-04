@@ -20,3 +20,4 @@ matplotlib
 langgraph
 ebooklib
 plotly
+langchain-google-genai
