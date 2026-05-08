@@ -5,7 +5,7 @@ import time
 import urllib.request
 from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
-from src.llm import get_llm, GROQ_MODEL
+from src.llm import get_llm, GROQ_MODEL, GEMINI_MODEL, OLLAMA_LOCAL_MODEL, OLLAMA_DEEPSEEK_MODEL
 from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats_bar
 from src.storage.sqlite_store import SermonRegistry
 from src.tools.sql_tool import make_sql_tool
@@ -138,7 +138,7 @@ try:
 
     _agent_cache: dict = {}
 
-    def get_agent(provider: str = "ollama"):
+    def get_agent(provider: str = "ollama_local"):
         if provider not in _agent_cache:
             _llm = get_llm(provider=provider, temperature=0.1)
             _agent_cache[provider] = create_react_agent(
@@ -148,8 +148,8 @@ try:
             )
         return _agent_cache[provider]
 
-    # Pre-warm Ollama agent at startup
-    get_agent("ollama")
+    # Pre-warm local Ollama agent at startup only
+    get_agent("ollama_local")
     _init_ok = True
 
 except Exception as e:
@@ -176,13 +176,16 @@ def _inference_badge_html(provider: str) -> str:
     elif provider == "gemini":
         has_key = bool(os.getenv("GOOGLE_API_KEY"))
         status = "online" if has_key else "offline"
-        label = "gemini · 2.5 pro" if has_key else "gemini · no key"
-    else:
+        label = f"gemini · {GEMINI_MODEL}" if has_key else "gemini · no key"
+    elif provider == "ollama_deepseek":
         status = _ollama_status
-        label = "ollama · local"
+        label = "deepseek-v4-flash · cloud"
+    else:  # ollama_local
+        status = _ollama_status
+        label = "gpt-oss-20b · local"
     return (
         "<div style='display:flex;justify-content:space-between;align-items:center;margin-top:8px;'>"
-        f"<span style='color:#94a3b8;'>Inference</span>"
+        f"<span style='color:#555;font-family:\"Source Code Pro\",monospace;font-size:0.72rem;'>inference</span>"
         f"<span class='status-badge status-{status}'>{label}</span>"
         "</div>"
     )
@@ -595,17 +598,23 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
                     </div>
                 </div>
             """)
-            inference_status = gr.HTML(_inference_badge_html("ollama"))
+            inference_status = gr.HTML(_inference_badge_html("ollama_local"))
 
             gr.Markdown("---")
             gr.Markdown("### Inference Engine")
             provider_radio = gr.Radio(
-                choices=["Ollama (local)", "Groq (cloud)", "Gemini (cloud)"],
-                value="Ollama (local)",
+                choices=[
+                    "GPT-OSS 20B [local]",
+                    "DeepSeek V4 Flash [cloud]",
+                    "Groq [cloud]",
+                    "Gemini 3 Flash [cloud]",
+                ],
+                value="GPT-OSS 20B [local]",
                 show_label=False,
                 interactive=True,
+                elem_id="model-radio",
             )
-            provider_state = gr.State("ollama")
+            provider_state = gr.State("ollama_local")
 
             gr.Markdown("---")
             gr.Markdown("### Capabilities")
@@ -624,8 +633,10 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             provider = "groq"
         elif "Gemini" in radio_val:
             provider = "gemini"
+        elif "DeepSeek" in radio_val:
+            provider = "ollama_deepseek"
         else:
-            provider = "ollama"
+            provider = "ollama_local"
         return provider, _inference_badge_html(provider)
 
     provider_radio.change(
