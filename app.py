@@ -548,7 +548,90 @@ button.secondary:hover {
     background: #f5f3ff !important;
     border-color: #a78bfa !important;
 }
+
+/* Quick query pills */
+#quick-query-pills .examples-holder,
+#quick-query-pills table,
+#quick-query-pills tbody,
+#quick-query-pills tr {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    border: none !important;
+    padding: 4px 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+}
+#quick-query-pills td { border: none !important; padding: 0 !important; }
+#quick-query-pills .label-wrap { display: none !important; }
+#quick-query-pills .example {
+    border-radius: 2px !important;
+    padding: 5px 13px !important;
+    font-size: 0.73rem !important;
+    font-family: 'Source Code Pro', monospace !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    transition: all 0.12s ease !important;
+    line-height: 1.4 !important;
+}
+#quick-query-pills .example:hover {
+    filter: brightness(0.92) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
+}
+/* Analytics — purple (1-3) */
+#quick-query-pills .example:nth-child(1),
+#quick-query-pills .example:nth-child(2),
+#quick-query-pills .example:nth-child(3) {
+    background: #ede9fe !important; border: 1px solid #a78bfa !important; color: #3b0764 !important;
+}
+/* Semantic — green (4-6) */
+#quick-query-pills .example:nth-child(4),
+#quick-query-pills .example:nth-child(5),
+#quick-query-pills .example:nth-child(6) {
+    background: #dcfce7 !important; border: 1px solid #4ade80 !important; color: #14532d !important;
+}
+/* Bible — amber (7-8) */
+#quick-query-pills .example:nth-child(7),
+#quick-query-pills .example:nth-child(8) {
+    background: #fef9c3 !important; border: 1px solid #facc15 !important; color: #713f12 !important;
+}
+/* People — red (9) */
+#quick-query-pills .example:nth-child(9) {
+    background: #fee2e2 !important; border: 1px solid #f87171 !important; color: #7f1d1d !important;
+}
+/* Content — blue (10) */
+#quick-query-pills .example:nth-child(10) {
+    background: #e0f2fe !important; border: 1px solid #38bdf8 !important; color: #0c4a6e !important;
+}
 """
+
+_QUICK_QUERY_LABELS = [
+    "📊 Scripture Coverage",
+    "📖 Gap Analysis",
+    "📈 Ministry Shifts",
+    "🔍 Spiritual Warfare",
+    "✝️ BBTC Theology",
+    "🧭 Theological Themes",
+    "📜 Bible Versions",
+    "📖 Bible Passages",
+    "👤 SP Chua Sermons",
+    "📝 Last Week's Sermon",
+]
+
+_QUICK_QUERY_FULL = [
+    ["Scripture Coverage: Generate a frequency heatmap of the most frequently preached Bible books."],
+    ["Gap Analysis: List all Bible books that have never been preached in BBTC sermons."],
+    ["Semantic Analysis: Identify shifts in ministry emphasis within BBTC over the last 5 years."],
+    ["Semantic Search: Find the top 3 sermons related to 'Spiritual Warfare' from 2024 to 2026."],
+    ["BBTC Theology: Explain the biblical sequence of End Times events based on BBTC teachings."],
+    ["Identify the consistent theological themes in BBTC's vision statements and pulpit series between 2015 and 2026"],
+    ["Bible Translation: List all Bible translations of 1 John 1:9 in the bible archives."],
+    ["Find Bible passages about forgiveness and grace using the Bible archive."],
+    ["Speaker Filter: List all sermons delivered by SP Chua Seng Lee in the year 2026."],
+    ["Specific Sermon: Summarize the key message and scripture shared in last week's sermon."],
+]
 
 with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
     with gr.Row(elem_id="header"):
@@ -582,20 +665,11 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
                 submit = gr.Button("Send", variant="primary", scale=1, elem_classes="btn-primary")
 
             gr.Examples(
-                examples=[
-                    ["Scripture Coverage: Generate a frequency heatmap of the most frequently preached Bible books."],
-                    ["Identify the consistent theological themes in BBTC’s vision statements and pulpit series between 2015 and 2026"],
-                    ["Gap Analysis: List all Bible books that have never been preached in BBTC sermons."],
-                    ["Semantic Analysis: Identify shifts in ministry emphasis within BBTC over the last 5 years."],
-                    ["BBTC Theology: Explain the biblical sequence of End Times events based on BBTC teachings."],
-                    ["Semantic Search: Find the top 3 sermons related to 'Spiritual Warfare' from 2024 to 2026."],
-                    ["Specific Sermon: Content: Summarize the key message and scripture shared in last week's sermon."],
-                    ["Bible Translation: List all Bible translations of 1 John 1:9 in the bible archives."],
-                    ["Speaker Filter: List all sermons delivered by SP Chua Seng Lee in the year 2026."],
-                    ["Categorization: Search for all mentions of 'Mental Health' and categorize the biblical advice given."]
-                ],
+                examples=_QUICK_QUERY_FULL,
                 inputs=msg,
-                label="Example questions"
+                example_labels=_QUICK_QUERY_LABELS,
+                label=None,
+                elem_id="quick-query-pills",
             )
 
         with gr.Column(scale=1, elem_classes="sidebar"):
