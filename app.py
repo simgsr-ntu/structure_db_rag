@@ -5,7 +5,7 @@ import time
 import urllib.request
 from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
-from src.llm import get_llm, GROQ_MODEL, GEMINI_MODEL, OLLAMA_LOCAL_MODEL, OLLAMA_DEEPSEEK_MODEL
+from src.llm import get_llm, GROQ_MODEL, GEMINI_MODEL, OLLAMA_LOCAL_MODEL
 from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats_bar
 from src.storage.sqlite_store import SermonRegistry
 from src.tools.sql_tool import make_sql_tool
@@ -177,15 +177,12 @@ def _inference_badge_html(provider: str) -> str:
         has_key = bool(os.getenv("GOOGLE_API_KEY"))
         status = "online" if has_key else "offline"
         label = f"gemini · {GEMINI_MODEL}" if has_key else "gemini · no key"
-    elif provider == "ollama_deepseek":
-        status = _ollama_status
-        label = "deepseek-v4-flash · cloud"
     else:  # ollama_local
         status = _ollama_status
         label = "gpt-oss-20b · local"
     return (
         "<div style='display:flex;justify-content:space-between;align-items:center;margin-top:8px;'>"
-        f"<span style='color:#555;font-family:\"Source Code Pro\",monospace;font-size:0.72rem;'>inference</span>"
+        f"<span style='color:var(--c-text-2);font-family:\"Source Code Pro\",monospace;font-size:0.72rem;'>inference</span>"
         f"<span class='status-badge status-{status}'>{label}</span>"
         "</div>"
     )
@@ -199,26 +196,38 @@ _TOOL_LABELS = {
     "search_bible_tool": "Bible Search",
 }
 
+_PROVIDER_DISPLAY = {
+    "ollama_local": "GPT-OSS 20B",
+    "groq": GROQ_MODEL,
+    "gemini": GEMINI_MODEL,
+}
 
-def _build_meta_footer(tools_used: list, token_info: dict) -> str:
+
+def _build_meta_footer(tools_used: list, token_info: dict, provider: str = "", elapsed: float = 0) -> str:
     left = ""
     if tools_used:
         labels = [_TOOL_LABELS.get(t, t) for t in tools_used]
-        left = "🔧 " + " · ".join(labels)
+        left = " · ".join(labels)
 
-    right = ""
+    right_parts = []
+    if provider:
+        model_name = _PROVIDER_DISPLAY.get(provider, provider)
+        right_parts.append(f"LangGraph ReAct · {model_name}")
+    if elapsed:
+        right_parts.append(f"{elapsed:.1f}s")
     total = token_info.get("total") or (token_info.get("input", 0) + token_info.get("output", 0))
     if total:
-        right = f"📊 {total:,} tokens"
+        right_parts.append(f"{total:,} tok")
+    right = " · ".join(right_parts)
 
     if not left and not right:
         return ""
 
     return (
         "<div style='margin-top:10px;padding-top:8px;"
-        "border-top:1px solid rgba(255,255,255,0.06);"
+        "border-top:1px solid #e0e0e0;"
         "display:flex;justify-content:space-between;align-items:center;"
-        "font-size:0.68rem;font-family:monospace;color:#475569;letter-spacing:0.4px;'>"
+        "font-size:0.68rem;font-family:monospace;color:#888888;letter-spacing:0.4px;'>"
         f"<span>{left}</span>"
         f"<span>{right}</span>"
         "</div>"
@@ -227,12 +236,12 @@ def _build_meta_footer(tools_used: list, token_info: dict) -> str:
 
 def respond(message, history, provider="ollama_local"):
     if not _init_ok or get_agent is None:
-        return "⚠️ Agent not initialized. Check that Ollama is running.", [], {}
+        return "⚠️ Agent not initialized. Check that Ollama is running.", [], {}, 0.0
 
     try:
         agent = get_agent(provider)
     except Exception as e:
-        return f"⚠️ Could not load {provider} agent: {e}", [], {}
+        return f"⚠️ Could not load {provider} agent: {e}", [], {}, 0.0
 
     truncated_history = history[-2:] if len(history) > 2 else history
     messages = []
@@ -249,10 +258,16 @@ def respond(message, history, provider="ollama_local"):
     messages.append(HumanMessage(content=message))
 
     try:
+        t0 = time.time()
         result = agent.invoke({"messages": messages})
+        elapsed = time.time() - t0
+
         final_msg = result["messages"][-1]
         final = final_msg.content
-        if not isinstance(final, str):
+        if isinstance(final, list):
+            text_parts = [block.get("text", "") for block in final if isinstance(block, dict) and block.get("type") == "text"]
+            final = "\n".join(text_parts)
+        elif not isinstance(final, str):
             final = str(final)
 
         # If the LLM dropped the chart path from its response, recover it from ToolMessage
@@ -287,65 +302,85 @@ def respond(message, history, provider="ollama_local"):
                 out = raw.get("completion_tokens") or raw.get("output_tokens") or raw.get("eval_count", 0)
                 token_info = {"input": inp, "output": out, "total": raw.get("total_tokens") or (inp + out)}
 
-        return final, tools_used, token_info
+        return final, tools_used, token_info, elapsed
     except Exception as e:
-        return f"⚠️ An error occurred while processing your request: {e}", [], {}
+        return f"⚠️ An error occurred while processing your request: {e}", [], {}, 0.0
 
 
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
 
+:root {
+  --c-bg:           #ebebeb;
+  --c-surface:      #ffffff;
+  --c-border:       #d8d8d8;
+  --c-border-light: #e8e8e8;
+  --c-text:         #111111;
+  --c-text-2:       #444444;
+  --c-text-3:       #888888;
+  --c-user-bg:      #f5f5f5;
+  --c-user-border:  #d8d8d8;
+  --c-user-text:    #111111;
+  --c-asst-bg:      #ffffff;
+  --c-asst-border:  #e8e8e8;
+  --c-asst-text:    #111111;
+  --c-input-text:   #111111;
+  --c-input-ph:     #aaaaaa;
+  --c-card-bg:      #ffffff;
+  --c-card-border:  #e0e0e0;
+  --c-card-sel-bg:  #ede9fe;
+  --c-card-hov-bg:  #f5f3ff;
+  --c-card-hov-bdr: #a78bfa;
+  --c-p1-bg:#ede9fe; --c-p1-bdr:#a78bfa; --c-p1-txt:#3b0764;
+  --c-p2-bg:#dcfce7; --c-p2-bdr:#4ade80; --c-p2-txt:#14532d;
+  --c-p3-bg:#fef9c3; --c-p3-bdr:#facc15; --c-p3-txt:#713f12;
+  --c-p4-bg:#fee2e2; --c-p4-bdr:#f87171; --c-p4-txt:#7f1d1d;
+  --c-p5-bg:#e0f2fe; --c-p5-bdr:#38bdf8; --c-p5-txt:#0c4a6e;
+}
+
 footer { visibility: hidden }
 * { box-sizing: border-box; }
-
-body {
-    background: #f5f5f0 !important;
-}
+body { background: var(--c-bg) !important; }
 
 .gradio-container {
     background: transparent !important;
-    color: #1a1a1a;
+    color: var(--c-text) !important;
     font-family: 'Source Code Pro', monospace !important;
     max-width: 1440px !important;
     font-size: 15px !important;
 }
 
-/* Scrollbar */
+.dark, [data-theme="dark"] { color-scheme: light !important; }
+.gradio-container, .main, #root { background: var(--c-bg) !important; color: var(--c-text) !important; }
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: #f0f0eb; }
-::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.35); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.55); }
+::-webkit-scrollbar-track { background: var(--c-border-light); }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.32); }
 
 /* Header */
 #title-container {
     padding: 14px 20px;
-    background: #fafaf7;
-    border: 1px solid #c8c8c0;
-    border-radius: 6px;
-    box-shadow: 2px 2px 0 #d4d4cc;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 4px;
     display: flex;
     align-items: center;
     gap: 16px;
     margin-bottom: 10px;
 }
-#title-container img {
-    height: 36px;
-    opacity: 0.95;
-}
+#title-container img { height: 36px; opacity: 0.85; }
 #title-text h1 {
     font-family: 'Source Code Pro', monospace;
     font-size: 1.4rem;
     font-weight: 700;
     margin: 0 0 2px 0;
-    background: linear-gradient(108deg, #2563eb 0%, #7c3aed 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--c-text);
     letter-spacing: -0.3px;
     line-height: 1.2;
 }
 #title-text p {
-    color: #888;
+    color: var(--c-text-3);
     font-size: 0.6rem;
     font-weight: 500;
     letter-spacing: 2px;
@@ -358,44 +393,42 @@ body {
 .stats-bar {
     display: flex;
     gap: 0;
-    background: #fafaf7;
-    border: 1px solid #c8c8c0;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
     border-radius: 4px;
     padding: 8px 16px;
     margin-bottom: 12px;
-    color: #555;
+    color: var(--c-text-2);
     font-size: 0.78rem;
     letter-spacing: 0.3px;
     font-family: 'Source Code Pro', monospace;
-    box-shadow: 1px 1px 0 #e0e0d8;
 }
 
 /* Chat area */
 .chatbot-container {
     border-radius: 4px !important;
-    border: 1px solid #c8c8c0 !important;
-    background: #fafaf7 !important;
-    box-shadow: 2px 2px 0 #d4d4cc !important;
+    border: 1px solid var(--c-border) !important;
+    background: var(--c-surface) !important;
     overflow: hidden !important;
 }
 
 /* Messages */
 .message-user {
-    background: #eff6ff !important;
-    border: 1px solid #bfdbfe !important;
-    border-radius: 0 6px 6px 6px !important;
+    background: var(--c-user-bg) !important;
+    border: 1px solid var(--c-user-border) !important;
+    border-radius: 4px !important;
     padding: 9px 14px !important;
-    color: #1e3a8a !important;
+    color: var(--c-user-text) !important;
     font-size: 0.84rem !important;
     font-family: 'Source Code Pro', monospace !important;
     line-height: 1.6;
 }
 .message-assistant {
-    background: #f0fdf4 !important;
-    border: 1px solid #bbf7d0 !important;
-    border-radius: 0 6px 6px 6px !important;
+    background: var(--c-asst-bg) !important;
+    border: 1px solid var(--c-asst-border) !important;
+    border-radius: 4px !important;
     padding: 9px 14px !important;
-    color: #14532d !important;
+    color: var(--c-asst-text) !important;
     font-size: 0.84rem !important;
     font-family: 'Source Code Pro', monospace !important;
     line-height: 1.65;
@@ -405,72 +438,64 @@ body {
 .gradio-plot {
     border-radius: 4px !important;
     overflow: hidden !important;
-    border: 1px solid #c8c8c0 !important;
+    border: 1px solid var(--c-border) !important;
     margin-top: 8px !important;
-    background: #fafaf7 !important;
+    background: var(--c-surface) !important;
 }
 
-/* Input row */
-.input-container {
-    background: #fafaf7 !important;
-    border: 1px solid #c8c8c0 !important;
-    border-radius: 4px !important;
+/* Input row — unified box */
+#input-row {
     margin-top: 8px !important;
-    padding: 0 !important;
-    overflow: hidden;
-    box-shadow: 1px 1px 0 #e0e0d8;
+    border: 1px solid var(--c-border) !important;
+    border-radius: 4px !important;
+    background: var(--c-surface) !important;
+    overflow: hidden !important;
+    gap: 0 !important;
+    align-items: stretch !important;
 }
-.input-container:focus-within {
-    border-color: #7c3aed !important;
-    box-shadow: 0 0 0 2px rgba(124,58,237,0.1) !important;
-}
-.input-container textarea {
+#input-row:focus-within { border-color: #555555 !important; }
+#input-row > div { padding: 0 !important; margin: 0 !important; border: none !important; background: transparent !important; }
+#input-row textarea {
     font-family: 'Source Code Pro', monospace !important;
     font-size: 0.84rem !important;
-    color: #1a1a1a !important;
+    color: var(--c-input-text) !important;
     background: transparent !important;
+    border: none !important;
+    outline: none !important;
     padding: 10px 14px !important;
+    resize: none !important;
 }
-.input-container textarea::placeholder {
-    color: #aaa !important;
-}
+#input-row textarea::placeholder { color: var(--c-input-ph) !important; }
 
 /* Submit button */
 .btn-primary {
-    background: #16a34a !important;
+    background: #222222 !important;
     border: none !important;
-    border-left: 1px solid #15803d !important;
+    border-left: 1px solid var(--c-border) !important;
     border-radius: 0 !important;
-    color: #fff !important;
-    font-weight: 700 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
     font-size: 0.7rem !important;
     letter-spacing: 1px;
     text-transform: uppercase;
     font-family: 'Source Code Pro', monospace !important;
     box-shadow: none !important;
-    transition: background 0.15s ease;
+    min-width: 72px !important;
 }
-.btn-primary:hover {
-    background: #15803d !important;
-    transform: none !important;
-    filter: none !important;
-    box-shadow: none !important;
-}
-.btn-primary:active {
-    background: #166534 !important;
-}
+.btn-primary:hover { background: #444444 !important; transform: none !important; filter: none !important; box-shadow: none !important; }
+.btn-primary:active { background: #000000 !important; }
+.btn-primary:disabled { background: #888888 !important; cursor: not-allowed !important; }
 
 /* Secondary button (Clear) */
 button.secondary {
-    background: #f5f5f0 !important;
-    border: 1px solid #c8c8c0 !important;
-    color: #555 !important;
+    background: var(--c-surface) !important;
+    border: 1px solid var(--c-border) !important;
+    color: var(--c-text-2) !important;
     border-radius: 3px !important;
     font-family: 'Source Code Pro', monospace !important;
     font-size: 0.7rem !important;
     letter-spacing: 1px;
     text-transform: uppercase;
-    transition: all 0.12s ease;
 }
 button.secondary:hover {
     background: #fee2e2 !important;
@@ -480,23 +505,26 @@ button.secondary:hover {
 
 /* Sidebar */
 .sidebar {
-    background: #fafaf7 !important;
-    border: 1px solid #c8c8c0 !important;
+    background: var(--c-surface) !important;
+    border: 1px solid var(--c-border) !important;
     padding: 18px !important;
     border-radius: 4px !important;
-    box-shadow: 2px 2px 0 #d4d4cc !important;
 }
 .sidebar h3 {
     font-family: 'Source Code Pro', monospace !important;
     font-size: 0.6rem !important;
     letter-spacing: 2px !important;
     text-transform: uppercase !important;
-    color: #888 !important;
+    color: var(--c-text-3) !important;
     margin-bottom: 12px !important;
 }
-.sidebar p, .sidebar li {
+.sidebar p, .sidebar li,
+.sidebar .prose p, .sidebar .prose li,
+.sidebar .prose strong, .sidebar .prose em,
+.sidebar .markdown p, .sidebar .markdown li,
+.sidebar .markdown strong, .sidebar .markdown em {
     font-size: 0.8rem !important;
-    color: #555 !important;
+    color: var(--c-text) !important;
     line-height: 1.6 !important;
     font-family: 'Source Code Pro', monospace !important;
 }
@@ -512,21 +540,13 @@ button.secondary:hover {
     font-family: 'Source Code Pro', monospace;
     border: 1px solid;
 }
-.status-online {
-    background: #dcfce7;
-    color: #166534;
-    border-color: #4ade80;
-}
-.status-offline {
-    background: #fee2e2;
-    color: #7f1d1d;
-    border-color: #f87171;
-}
+.status-online  { background: #dcfce7; color: #166534; border-color: #4ade80; }
+.status-offline { background: #fee2e2; color: #7f1d1d; border-color: #f87171; }
 
 /* Radio model cards */
 #model-radio label {
-    background: #fafaf7 !important;
-    border: 1px solid #e0e0d8 !important;
+    background: var(--c-card-bg) !important;
+    border: 1px solid var(--c-card-border) !important;
     border-radius: 3px !important;
     padding: 7px 10px !important;
     margin-bottom: 5px !important;
@@ -534,19 +554,19 @@ button.secondary:hover {
     transition: all 0.12s ease !important;
     font-family: 'Source Code Pro', monospace !important;
     font-size: 0.78rem !important;
-    color: #1a1a1a !important;
+    color: var(--c-text) !important;
     display: flex !important;
     align-items: center !important;
     gap: 8px !important;
 }
 #model-radio label:has(input:checked) {
-    background: #ede9fe !important;
+    background: var(--c-card-sel-bg) !important;
     border-color: #7c3aed !important;
     border-left: 3px solid #7c3aed !important;
 }
 #model-radio label:hover:not(:has(input:checked)) {
-    background: #f5f3ff !important;
-    border-color: #a78bfa !important;
+    background: var(--c-card-hov-bg) !important;
+    border-color: var(--c-card-hov-bdr) !important;
 }
 
 /* Quick query pills */
@@ -578,32 +598,27 @@ button.secondary:hover {
 #quick-query-pills .example:hover {
     filter: brightness(0.92) !important;
     transform: translateY(-1px) !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12) !important;
 }
-/* Analytics — purple (1-3) */
 #quick-query-pills .example:nth-child(1),
 #quick-query-pills .example:nth-child(2),
 #quick-query-pills .example:nth-child(3) {
-    background: #ede9fe !important; border: 1px solid #a78bfa !important; color: #3b0764 !important;
+    background: var(--c-p1-bg) !important; border: 1px solid var(--c-p1-bdr) !important; color: var(--c-p1-txt) !important;
 }
-/* Semantic — green (4-6) */
 #quick-query-pills .example:nth-child(4),
 #quick-query-pills .example:nth-child(5),
 #quick-query-pills .example:nth-child(6) {
-    background: #dcfce7 !important; border: 1px solid #4ade80 !important; color: #14532d !important;
+    background: var(--c-p2-bg) !important; border: 1px solid var(--c-p2-bdr) !important; color: var(--c-p2-txt) !important;
 }
-/* Bible — amber (7-8) */
 #quick-query-pills .example:nth-child(7),
 #quick-query-pills .example:nth-child(8) {
-    background: #fef9c3 !important; border: 1px solid #facc15 !important; color: #713f12 !important;
+    background: var(--c-p3-bg) !important; border: 1px solid var(--c-p3-bdr) !important; color: var(--c-p3-txt) !important;
 }
-/* People — red (9) */
 #quick-query-pills .example:nth-child(9) {
-    background: #fee2e2 !important; border: 1px solid #f87171 !important; color: #7f1d1d !important;
+    background: var(--c-p4-bg) !important; border: 1px solid var(--c-p4-bdr) !important; color: var(--c-p4-txt) !important;
 }
-/* Content — blue (10) */
 #quick-query-pills .example:nth-child(10) {
-    background: #e0f2fe !important; border: 1px solid #38bdf8 !important; color: #0c4a6e !important;
+    background: var(--c-p5-bg) !important; border: 1px solid var(--c-p5-bdr) !important; color: var(--c-p5-txt) !important;
 }
 """
 
@@ -633,7 +648,7 @@ _QUICK_QUERY_FULL = [
     ["Specific Sermon: Summarize the key message and scripture shared in last week's sermon."],
 ]
 
-with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
+with gr.Blocks(title="BBTC Sermon Intelligence", theme=gr.themes.Default()) as demo:
     with gr.Row(elem_id="header"):
         with gr.Column(scale=4):
             gr.HTML("""
@@ -656,13 +671,15 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
                 elem_classes="chatbot-container",
                 avatar_images=(None, "https://www.bbtc.com.sg/wp-content/uploads/2021/04/BBTC-Logo-Header.png")
             )
-            with gr.Row(elem_classes="input-container"):
+            with gr.Row(elem_id="input-row"):
                 msg = gr.Textbox(
                     placeholder="Describe the data you need or ask a theological question...",
                     container=False,
+                    lines=1,
+                    max_lines=4,
                     scale=7,
                 )
-                submit = gr.Button("Send", variant="primary", scale=1, elem_classes="btn-primary")
+                submit = gr.Button("Send", variant="primary", scale=1, min_width=80, elem_classes="btn-primary")
 
             gr.Examples(
                 examples=_QUICK_QUERY_FULL,
@@ -695,7 +712,6 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             provider_radio = gr.Radio(
                 choices=[
                     "GPT-OSS 20B [local]",
-                    "DeepSeek V4 Flash [cloud]",
                     "Groq [cloud]",
                     "Gemini 3 Flash [cloud]",
                 ],
@@ -723,8 +739,6 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
             provider = "groq"
         elif "Gemini" in radio_val:
             provider = "gemini"
-        elif "DeepSeek" in radio_val:
-            provider = "ollama_deepseek"
         else:
             provider = "ollama_local"
         return provider, _inference_badge_html(provider)
@@ -746,10 +760,10 @@ with gr.Blocks(title="BBTC Sermon Intelligence") as demo:
 
         user_message = history[-1]["content"]
         chat_history = history[:-1]
-        bot_message, tools_used, token_info = respond(user_message, chat_history, provider)
+        bot_message, tools_used, token_info, elapsed = respond(user_message, chat_history, provider)
 
         text, chart_path = extract_chart_path(bot_message)
-        meta_footer = _build_meta_footer(tools_used, token_info)
+        meta_footer = _build_meta_footer(tools_used, token_info, provider, elapsed)
 
         content = []
         if text:

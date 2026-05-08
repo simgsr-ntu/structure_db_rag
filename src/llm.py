@@ -4,7 +4,6 @@ import os
 GROQ_MODEL = "openai/gpt-oss-20b"
 GEMINI_MODEL = "gemini-3-flash-preview"
 OLLAMA_LOCAL_MODEL = "macdev/gpt-oss20b-large-ctx"
-OLLAMA_DEEPSEEK_MODEL = "deepseek-v4-flash:cloud"
 
 
 def get_llm(provider="ollama_local", temperature=0):
@@ -24,5 +23,4 @@ def get_llm(provider="ollama_local", temperature=0):
             model=GEMINI_MODEL, temperature=temperature, google_api_key=api_key
         )
 
-    model = OLLAMA_DEEPSEEK_MODEL if provider == "ollama_deepseek" else OLLAMA_LOCAL_MODEL
-    return ChatOllama(model=model, temperature=temperature)
+    return ChatOllama(model=OLLAMA_LOCAL_MODEL, temperature=temperature)
