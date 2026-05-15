@@ -21,7 +21,7 @@ from src.storage.sqlite_store import SermonRegistry
 from src.storage.chroma_store import SermonVectorStore
 from src.storage.normalize_speaker import normalize_speaker
 from src.storage.normalize_book import normalize_book
-from src.llm import get_llm
+from src.llm import get_llm, OLLAMA_INGEST_MODEL
 
 STAGING_DIR = "data/staging"
 CHROMA_DIR = "data/chroma_db"
@@ -221,7 +221,7 @@ def run_pipeline(wipe: bool = False, year: int | None = None, incremental: bool 
 
     registry = SermonRegistry(db_path=DB_PATH)
     vector_store = SermonVectorStore(persist_dir=CHROMA_DIR)
-    llm = get_llm()
+    llm = get_llm(model=OLLAMA_INGEST_MODEL)
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
 
     if wipe:

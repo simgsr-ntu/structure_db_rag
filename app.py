@@ -5,7 +5,7 @@ import time
 import urllib.request
 from dotenv import load_dotenv
 from src.storage.chroma_store import SermonVectorStore
-from src.llm import get_llm, GROQ_MODEL, GEMINI_MODEL, OLLAMA_LOCAL_MODEL
+from src.llm import get_llm, GROQ_MODEL, GEMINI_MODEL, OLLAMA_CHAT_MODEL
 from src.ui_helpers import extract_chart_path, fetch_archive_stats, render_stats_bar
 from src.storage.sqlite_store import SermonRegistry
 from src.tools.sql_tool import make_sql_tool
@@ -179,7 +179,7 @@ def _inference_badge_html(provider: str) -> str:
         label = f"gemini · {GEMINI_MODEL}" if has_key else "gemini · no key"
     else:  # ollama_local
         status = _ollama_status
-        label = "gpt-oss-20b · local"
+        label = f"{OLLAMA_CHAT_MODEL} · local"
     return (
         "<div style='display:flex;justify-content:space-between;align-items:center;margin-top:8px;'>"
         f"<span style='color:var(--c-text-2);font-family:\"Source Code Pro\",monospace;font-size:0.72rem;'>inference</span>"
@@ -197,7 +197,7 @@ _TOOL_LABELS = {
 }
 
 _PROVIDER_DISPLAY = {
-    "ollama_local": "GPT-OSS 20B",
+    "ollama_local": OLLAMA_CHAT_MODEL,
     "groq": GROQ_MODEL,
     "gemini": GEMINI_MODEL,
 }
@@ -711,11 +711,11 @@ with gr.Blocks(title="BBTC Sermon Intelligence", theme=gr.themes.Default()) as d
             gr.Markdown("### Inference Engine")
             provider_radio = gr.Radio(
                 choices=[
-                    "GPT-OSS 20B [local]",
+                    f"{OLLAMA_CHAT_MODEL} [local]",
                     "Groq [cloud]",
                     "Gemini 3 Flash [cloud]",
                 ],
-                value="GPT-OSS 20B [local]",
+                value=f"{OLLAMA_CHAT_MODEL} [local]",
                 show_label=False,
                 interactive=True,
                 elem_id="model-radio",
