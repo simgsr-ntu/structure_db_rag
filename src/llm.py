@@ -5,6 +5,7 @@ GROQ_MODEL = "openai/gpt-oss-20b"
 GEMINI_MODEL = "gemini-3-flash-preview"
 
 # Default models for different purposes
+# OLLAMA_CHAT_MODEL = "gemma4:latest" # faster, for computer with lesser memory
 OLLAMA_CHAT_MODEL = "qwen3.5:122b"   # Keep the big one for chat if user wants
 OLLAMA_INGEST_MODEL = "gemma4:latest" # Use the 9.6GB one for background work
 

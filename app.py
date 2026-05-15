@@ -626,26 +626,26 @@ _QUICK_QUERY_LABELS = [
     "📊 Scripture Coverage",
     "📖 Gap Analysis",
     "📈 Ministry Shifts",
-    "🔍 Spiritual Warfare",
+    "✝️ BBTC Theology",
     "✝️ BBTC Theology",
     "🧭 Theological Themes",
     "📜 Bible Versions",
     "📖 Bible Passages",
-    "👤 SP Chua Sermons",
-    "📝 Last Week's Sermon",
+    "👤 Speaker Specific",
+    "📝 Sermons Specific",
 ]
 
 _QUICK_QUERY_FULL = [
     ["Scripture Coverage: Generate a frequency heatmap of the most frequently preached Bible books."],
     ["Gap Analysis: List all Bible books that have never been preached in BBTC sermons."],
-    ["Semantic Analysis: Identify shifts in ministry emphasis within BBTC over the last 5 years."],
-    ["Semantic Search: Find the top 3 sermons related to 'Spiritual Warfare' from 2024 to 2026."],
+    ["Ministry Shifts: Identify shifts in ministry emphasis within BBTC over the last 5 years."],
+    ["BBTC Theology: Do BBTC believe in once saved always saved?."],
     ["BBTC Theology: Explain the biblical sequence of End Times events based on BBTC teachings."],
-    ["Identify the consistent theological themes in BBTC's vision statements and pulpit series between 2015 and 2026"],
-    ["Bible Translation: List all Bible translations of 1 John 1:9 in the bible archives."],
+    ["Theological Themes: Identify the consistent theological themes in BBTC's vision statements and pulpit series between 2015 and 2026"],
+    ["Bible Translation: List all Bible translations of 1 John 1:9 in the bible arhives."],
     ["Find Bible passages about forgiveness and grace using the Bible archive."],
-    ["Speaker Filter: List all sermons delivered by SP Chua Seng Lee in the year 2026."],
-    ["Specific Sermon: Summarize the key message and scripture shared in last week's sermon."],
+    ["Speaker Specific: Chart sermon count by speaker from 2015 to now,"],
+    ["Sermons Specific: Summarize the key message and scripture shared in last week's sermon."],
 ]
 
 with gr.Blocks(title="BBTC Sermon Intelligence", theme=gr.themes.Default()) as demo:
